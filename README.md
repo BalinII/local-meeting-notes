@@ -1,35 +1,145 @@
 # Local Meeting Notes
 
-Local-first Windows desktop application for capturing meeting audio, generating transcripts, diarizing speakers, and producing summaries, actions, and follow-ups without joining the meeting as a bot.
+Local Meeting Notes is a Windows-first, local-first desktop app scaffold for capturing meeting context, preparing transcripts, and generating notes without joining meetings as a bot.
 
-## MVP Goal
+Phase 1 focuses on repository structure only:
+- Tauri desktop shell scaffold
+- Python backend package layout
+- SQLite-ready local storage paths
+- Placeholder modules for the future meeting pipeline
+- Windows-oriented setup and helper scripts
 
-Build a private desktop app that:
-- runs locally on Windows
-- captures system audio and microphone input
-- transcribes meetings
-- separates speakers
-- generates summary notes, actions, decisions, and follow-ups
-- stores everything locally first
+No real meeting logic is implemented yet.
 
-## Initial Tech Direction
+## Phase 1 Repo Structure
 
-- Frontend/Desktop shell: Tauri
-- Backend pipeline: Python
-- Database: SQLite
-- Meeting metadata: Microsoft Graph
-- Audio capture: Windows loopback + mic capture
+```text
+local-meeting-notes/
+|-- app/
+|   |-- package.json
+|   |-- tsconfig.json
+|   |-- vite.config.ts
+|   |-- index.html
+|   |-- src/
+|   |   |-- App.tsx
+|   |   |-- main.tsx
+|   |   |-- env.d.ts
+|   |   |-- components/
+|   |   |   |-- AppShell.tsx
+|   |   |   `-- StatusCard.tsx
+|   |   |-- lib/
+|   |   |   `-- placeholders.ts
+|   |   `-- styles/
+|   |       `-- app.css
+|   `-- src-tauri/
+|       |-- Cargo.toml
+|       |-- build.rs
+|       |-- tauri.conf.json
+|       `-- src/
+|           |-- lib.rs
+|           `-- main.rs
+|-- backend/
+|   |-- pyproject.toml
+|   |-- data/
+|   |   |-- audio/
+|   |   |-- exports/
+|   |   |-- meetings/
+|   |   |-- transcripts/
+|   |   `-- tmp/
+|   `-- src/
+|       `-- local_meeting_notes/
+|           |-- app.py
+|           |-- config.py
+|           |-- bootstrap.py
+|           |-- api/
+|           |-- core/
+|           |-- models/
+|           |-- services/
+|           |-- utils/
+|           |-- meeting_detector/
+|           |-- audio_capture/
+|           |-- transcription_engine/
+|           |-- diarization_engine/
+|           |-- speaker_attribution/
+|           |-- summarizer/
+|           |-- action_extractor/
+|           |-- storage/
+|           |-- microsoft_integration/
+|           `-- export_service/
+|-- docs/
+|   |-- architecture/
+|   |   `-- phase-1-overview.md
+|   `-- setup/
+|       `-- windows-local-dev.md
+|-- scripts/
+|   |-- dev/
+|   |   |-- start-backend.ps1
+|   |   `-- start-frontend.ps1
+|   `-- windows/
+|       `-- setup-local-env.ps1
+|-- tests/
+|   |-- integration/
+|   |   `-- test_scaffold.py
+|   `-- unit/
+|       `-- test_bootstrap.py
+|-- .env.example
+|-- .gitignore
+`-- CODEX_TASK_1.md
+```
 
-## Non-goals for MVP
+## Placeholder Modules
 
-- No Teams bot
-- No visible joining of meetings
-- No assumption of perfect speaker identity attribution
-- No polished enterprise-grade UI in phase 1
+The backend includes starter packages for:
+- `meeting_detector`
+- `audio_capture`
+- `transcription_engine`
+- `diarization_engine`
+- `speaker_attribution`
+- `summarizer`
+- `action_extractor`
+- `storage`
+- `microsoft_integration`
+- `export_service`
 
-## Top Risks
+Each package exposes a stub service and clear docstrings so Phase 2 can add implementation without reshaping the repo.
 
-- Reliable Windows system audio capture
-- Speaker diarization quality
-- Accurate speaker-to-person attribution
-- Microsoft auth and meeting detection edge cases
+## Local Development Setup
+
+### Prerequisites
+
+- Windows 11 preferred
+- Python 3.12+
+- Node.js 20+
+- Rust stable with MSVC toolchain
+- WebView2 runtime
+
+### Backend
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e .\backend
+python -m local_meeting_notes.app
+```
+
+### Frontend
+
+```powershell
+Set-Location .\app
+npm install
+npm run dev
+```
+
+### Tauri Desktop Shell
+
+```powershell
+Set-Location .\app
+npm run tauri:dev
+```
+
+## Notes
+
+- The app is designed for local data storage first.
+- SQLite remains the default persistence target.
+- Microsoft integration is metadata-oriented only in this scaffold.
+- No Teams bot, cloud pipeline, or production capture flow is included in Phase 1.

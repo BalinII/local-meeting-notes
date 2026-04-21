@@ -1,0 +1,15 @@
+"""Placeholder transcription engine service."""
+
+from ..config import AppConfig
+from ..utils.placeholders import PlaceholderStatus
+
+
+class TranscriptionEngineService:
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def status(self) -> PlaceholderStatus:
+        return PlaceholderStatus(
+            component="transcription_engine",
+            message="Reserved for local speech-to-text model integration.",
+        )
