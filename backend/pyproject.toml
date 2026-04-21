@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Windows-first local meeting notes desktop backend scaffold."
 readme = "../README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "numpy>=1.26",
+  "soundcard>=0.4.3",
+  "soundfile>=0.12.1",
+]
 
 [project.scripts]
 local-meeting-notes = "local_meeting_notes.app:main"
@@ -28,6 +32,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
 pythonpath = ["src"]
+addopts = "--basetemp=backend/data/tmp/pytest"
 
 [tool.ruff]
 line-length = 100

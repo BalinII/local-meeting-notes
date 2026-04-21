@@ -1,13 +1,12 @@
+from local_meeting_notes.audio_capture.service import AudioCaptureService
 from local_meeting_notes.config import load_config
 
 
-def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
+def test_audio_capture_status_defaults_to_idle(local_tmp_dir) -> None:
     env = {
-        "APP_ENV": "test",
-        "LOG_LEVEL": "debug",
         "LMN_DATA_DIR": str(local_tmp_dir / "data"),
         "AUDIO_OUTPUT_DIR": str(local_tmp_dir / "data" / "audio"),
-        "DATABASE_PATH": str(local_tmp_dir / "data" / "app.db"),
+        "DATABASE_PATH": str(local_tmp_dir / "data" / "local_meeting_notes.db"),
         "TRANSCRIPT_OUTPUT_DIR": str(local_tmp_dir / "data" / "transcripts"),
         "EXPORT_OUTPUT_DIR": str(local_tmp_dir / "data" / "exports"),
         "TEMP_OUTPUT_DIR": str(local_tmp_dir / "data" / "tmp"),
@@ -17,13 +16,9 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
     }
 
     config = load_config(env=env)
+    service = AudioCaptureService(config)
 
-    assert config.app_env == "test"
-    assert config.log_level == "DEBUG"
-    assert config.audio_chunk_seconds == 30
-    assert config.audio_sample_rate == 16000
-    assert config.audio_channels == 1
-    assert config.database_path == local_tmp_dir / "data" / "app.db"
-    assert config.audio_output_dir.exists()
-    assert config.log_dir.exists()
-    assert config.session_state_path.parent.exists()
+    status = service.status()
+
+    assert status["status"] == "idle"
+    assert "fragile" in status["message"]

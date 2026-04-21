@@ -12,13 +12,19 @@ class AppConfig:
     app_env: str
     log_level: str
     app_name: str
+    audio_chunk_seconds: int
+    audio_sample_rate: int
+    audio_channels: int
+    audio_capture_mode: str
     data_dir: Path
+    audio_output_dir: Path
     database_path: Path
     transcript_output_dir: Path
     export_output_dir: Path
     temp_output_dir: Path
     log_dir: Path
     session_state_path: Path
+    audio_capture_state_path: Path
 
 
 def project_root() -> Path:
@@ -38,6 +44,7 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
     source = os.environ if env is None else env
 
     data_dir = _resolve_path(source.get("LMN_DATA_DIR", "backend/data"))
+    audio_output_dir = _resolve_path(source.get("AUDIO_OUTPUT_DIR", "backend/data/audio"))
     database_path = _resolve_path(source.get("DATABASE_PATH", "backend/data/local_meeting_notes.db"))
     transcript_output_dir = _resolve_path(
         source.get("TRANSCRIPT_OUTPUT_DIR", "backend/data/transcripts")
@@ -48,14 +55,19 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
     session_state_path = _resolve_path(
         source.get("SESSION_STATE_PATH", "backend/data/tmp/mock_session.json")
     )
+    audio_capture_state_path = _resolve_path(
+        source.get("AUDIO_CAPTURE_STATE_PATH", "backend/data/tmp/audio_capture_state.json")
+    )
 
     for directory in (
         data_dir,
+        audio_output_dir,
         transcript_output_dir,
         export_output_dir,
         temp_output_dir,
         log_dir,
         session_state_path.parent,
+        audio_capture_state_path.parent,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -63,11 +75,17 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         app_env=source.get("APP_ENV", "development"),
         log_level=source.get("LOG_LEVEL", "INFO").upper(),
         app_name=source.get("APP_NAME", "Local Meeting Notes"),
+        audio_chunk_seconds=int(source.get("AUDIO_CHUNK_SECONDS", "30")),
+        audio_sample_rate=int(source.get("AUDIO_SAMPLE_RATE", "16000")),
+        audio_channels=int(source.get("AUDIO_CHANNELS", "1")),
+        audio_capture_mode=source.get("AUDIO_CAPTURE_MODE", "windows-loopback+microphone"),
         data_dir=data_dir,
+        audio_output_dir=audio_output_dir,
         database_path=database_path,
         transcript_output_dir=transcript_output_dir,
         export_output_dir=export_output_dir,
         temp_output_dir=temp_output_dir,
         log_dir=log_dir,
         session_state_path=session_state_path,
+        audio_capture_state_path=audio_capture_state_path,
     )

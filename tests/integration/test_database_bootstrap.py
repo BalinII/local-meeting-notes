@@ -1,20 +1,20 @@
-from pathlib import Path
-
 from local_meeting_notes.bootstrap import bootstrap_application
 from local_meeting_notes.models import MeetingRecord
 from local_meeting_notes.storage.database import connection_context
 from local_meeting_notes.storage.repository import fetch_table_names, insert_meeting
 
 
-def test_database_bootstrap_and_basic_persistence(tmp_path: Path) -> None:
+def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
     env = {
-        "LMN_DATA_DIR": str(tmp_path / "data"),
-        "DATABASE_PATH": str(tmp_path / "data" / "local_meeting_notes.db"),
-        "TRANSCRIPT_OUTPUT_DIR": str(tmp_path / "data" / "transcripts"),
-        "EXPORT_OUTPUT_DIR": str(tmp_path / "data" / "exports"),
-        "TEMP_OUTPUT_DIR": str(tmp_path / "data" / "tmp"),
-        "LOG_DIR": str(tmp_path / "data" / "logs"),
-        "SESSION_STATE_PATH": str(tmp_path / "data" / "tmp" / "session.json"),
+        "LMN_DATA_DIR": str(local_tmp_dir / "data"),
+        "AUDIO_OUTPUT_DIR": str(local_tmp_dir / "data" / "audio"),
+        "DATABASE_PATH": str(local_tmp_dir / "data" / "local_meeting_notes.db"),
+        "TRANSCRIPT_OUTPUT_DIR": str(local_tmp_dir / "data" / "transcripts"),
+        "EXPORT_OUTPUT_DIR": str(local_tmp_dir / "data" / "exports"),
+        "TEMP_OUTPUT_DIR": str(local_tmp_dir / "data" / "tmp"),
+        "LOG_DIR": str(local_tmp_dir / "data" / "logs"),
+        "SESSION_STATE_PATH": str(local_tmp_dir / "data" / "tmp" / "session.json"),
+        "AUDIO_CAPTURE_STATE_PATH": str(local_tmp_dir / "data" / "tmp" / "audio_capture_state.json"),
     }
 
     state = bootstrap_application(env=env, bootstrap_db=True)

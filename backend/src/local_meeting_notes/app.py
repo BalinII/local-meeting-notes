@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
+from pathlib import Path
 
 from .bootstrap import bootstrap_application
+from .audio_capture.dependencies import AudioDependencyError
+from .audio_capture.worker import run_capture_worker
+from .audio_capture.service import AudioCaptureService
 from .models import ActionRecord, DecisionRecord, SummaryRecord
 from .storage.database import connection_context
 from .storage.mock_seed import build_mock_records, build_mock_session
@@ -38,6 +42,24 @@ def build_parser() -> argparse.ArgumentParser:
     session_start.add_argument("--title", default="Mock Local Meeting")
 
     session_subparsers.add_parser("stop", help="Stop the current mock meeting session.")
+
+    audio_parser = subparsers.add_parser("audio", help="Windows audio capture commands.")
+    audio_subparsers = audio_parser.add_subparsers(dest="audio_command", required=True)
+
+    audio_subparsers.add_parser("devices", help="List audio devices visible to the capture stack.")
+
+    audio_start = audio_subparsers.add_parser("start", help="Start manual local audio capture.")
+    audio_start.add_argument("--chunk-seconds", type=int)
+    audio_start.add_argument("--sample-rate", type=int)
+    audio_start.add_argument("--channels", type=int)
+    audio_start.add_argument("--no-loopback", action="store_true")
+    audio_start.add_argument("--no-microphone", action="store_true")
+
+    audio_subparsers.add_parser("stop", help="Stop the active local audio capture session.")
+    audio_subparsers.add_parser("status", help="Show the active audio capture state.")
+
+    audio_worker = audio_subparsers.add_parser("worker", help=argparse.SUPPRESS)
+    audio_worker.add_argument("--state-path", required=True)
 
     return parser
 
@@ -114,6 +136,86 @@ def run_session_stop() -> int:
     return 0
 
 
+def _get_audio_service() -> AudioCaptureService:
+    state = bootstrap_application()
+    service = state.services["audio_capture"]
+    assert isinstance(service, AudioCaptureService)
+    return service
+
+
+def run_audio_devices() -> int:
+    service = _get_audio_service()
+    try:
+        devices = service.list_devices()
+    except AudioDependencyError as exc:
+        print(str(exc))
+        return 1
+
+    if not devices:
+        print("No audio devices were detected.")
+        return 0
+
+    for device in devices:
+        default_marker = " (default)" if device.is_default else ""
+        print(f"{device.kind}: {device.name}{default_marker}")
+    return 0
+
+
+def run_audio_start(
+    *,
+    chunk_seconds: int | None,
+    sample_rate: int | None,
+    channels: int | None,
+    no_loopback: bool,
+    no_microphone: bool,
+) -> int:
+    state = bootstrap_application()
+    service = state.services["audio_capture"]
+    assert isinstance(service, AudioCaptureService)
+    try:
+        capture_state = service.start_capture(
+            include_loopback=not no_loopback,
+            include_microphone=not no_microphone,
+            chunk_seconds=chunk_seconds or state.config.audio_chunk_seconds,
+            sample_rate=sample_rate or state.config.audio_sample_rate,
+            channels=channels or state.config.audio_channels,
+        )
+    except (AudioDependencyError, RuntimeError) as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Started audio capture: {capture_state['capture_id']}")
+    print(f"Output directory: {capture_state['output_dir']}")
+    return 0
+
+
+def run_audio_stop() -> int:
+    service = _get_audio_service()
+    state = service.stop_capture()
+    print(f"Audio capture status: {state['status']}")
+    if state.get("last_error"):
+        print(f"Last error: {state['last_error']}")
+    return 0
+
+
+def run_audio_status() -> int:
+    service = _get_audio_service()
+    state = service.status()
+    print(f"Audio capture status: {state['status']}")
+    if state.get("capture_id"):
+        print(f"Capture ID: {state['capture_id']}")
+    if state.get("output_dir"):
+        print(f"Output directory: {state['output_dir']}")
+    if state.get("last_error"):
+        print(f"Last error: {state['last_error']}")
+    return 0
+
+
+def run_audio_worker_entry(state_path: str) -> int:
+    state = bootstrap_application()
+    return run_capture_worker(state.config, Path(state_path))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -126,6 +228,22 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_start(args.title)
     if args.command == "session" and args.session_command == "stop":
         return run_session_stop()
+    if args.command == "audio" and args.audio_command == "devices":
+        return run_audio_devices()
+    if args.command == "audio" and args.audio_command == "start":
+        return run_audio_start(
+            chunk_seconds=args.chunk_seconds,
+            sample_rate=args.sample_rate,
+            channels=args.channels,
+            no_loopback=args.no_loopback,
+            no_microphone=args.no_microphone,
+        )
+    if args.command == "audio" and args.audio_command == "stop":
+        return run_audio_stop()
+    if args.command == "audio" and args.audio_command == "status":
+        return run_audio_status()
+    if args.command == "audio" and args.audio_command == "worker":
+        return run_audio_worker_entry(args.state_path)
 
     parser.error("Unsupported command.")
     return 2
