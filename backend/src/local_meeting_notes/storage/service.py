@@ -1,15 +1,25 @@
-"""Placeholder SQLite and local file storage service."""
+"""SQLite and local file storage service."""
+
+from __future__ import annotations
+
+import logging
 
 from ..config import AppConfig
-from ..utils.placeholders import PlaceholderStatus
+from .database import bootstrap_database
 
 
 class StorageService:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, logger: logging.Logger | None = None) -> None:
         self.config = config
+        self.logger = logger or logging.getLogger("local_meeting_notes.storage")
 
-    def status(self) -> PlaceholderStatus:
-        return PlaceholderStatus(
-            component="storage",
-            message="Reserved for SQLite schema management and local artifact persistence.",
-        )
+    def bootstrap(self) -> None:
+        bootstrap_database(self.config)
+        self.logger.info("SQLite bootstrap complete at %s", self.config.database_path)
+
+    def status(self) -> dict[str, str]:
+        return {
+            "component": "storage",
+            "status": "ready",
+            "message": "SQLite bootstrap and local artifact persistence are available.",
+        }

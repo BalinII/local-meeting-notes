@@ -11,5 +11,5 @@ class MeetingDetectorService:
     def status(self) -> PlaceholderStatus:
         return PlaceholderStatus(
             component="meeting_detector",
-            message="Reserved for local meeting source detection and metadata discovery.",
+            message="Reserved for local meeting source detection and mock session awareness.",
         )

@@ -11,14 +11,17 @@ from pathlib import Path
 class AppConfig:
     app_env: str
     log_level: str
+    app_name: str
     data_dir: Path
     database_path: Path
     transcript_output_dir: Path
     export_output_dir: Path
     temp_output_dir: Path
+    log_dir: Path
+    session_state_path: Path
 
 
-def _project_root() -> Path:
+def project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
@@ -26,29 +29,45 @@ def _resolve_path(raw_value: str) -> Path:
     path = Path(raw_value)
     if path.is_absolute():
         return path
-    return (_project_root() / path).resolve()
+    return (project_root() / path).resolve()
 
 
-def load_config() -> AppConfig:
-    """Load a small set of environment-driven paths."""
+def load_config(env: dict[str, str] | None = None) -> AppConfig:
+    """Load environment-driven config and ensure local directories exist."""
 
-    data_dir = _resolve_path(os.getenv("LMN_DATA_DIR", "backend/data"))
-    database_path = _resolve_path(os.getenv("DATABASE_PATH", "backend/data/local_meeting_notes.db"))
+    source = os.environ if env is None else env
+
+    data_dir = _resolve_path(source.get("LMN_DATA_DIR", "backend/data"))
+    database_path = _resolve_path(source.get("DATABASE_PATH", "backend/data/local_meeting_notes.db"))
     transcript_output_dir = _resolve_path(
-        os.getenv("TRANSCRIPT_OUTPUT_DIR", "backend/data/transcripts")
+        source.get("TRANSCRIPT_OUTPUT_DIR", "backend/data/transcripts")
     )
-    export_output_dir = _resolve_path(os.getenv("EXPORT_OUTPUT_DIR", "backend/data/exports"))
-    temp_output_dir = _resolve_path(os.getenv("TEMP_OUTPUT_DIR", "backend/data/tmp"))
+    export_output_dir = _resolve_path(source.get("EXPORT_OUTPUT_DIR", "backend/data/exports"))
+    temp_output_dir = _resolve_path(source.get("TEMP_OUTPUT_DIR", "backend/data/tmp"))
+    log_dir = _resolve_path(source.get("LOG_DIR", "backend/data/logs"))
+    session_state_path = _resolve_path(
+        source.get("SESSION_STATE_PATH", "backend/data/tmp/mock_session.json")
+    )
 
-    for directory in (data_dir, transcript_output_dir, export_output_dir, temp_output_dir):
+    for directory in (
+        data_dir,
+        transcript_output_dir,
+        export_output_dir,
+        temp_output_dir,
+        log_dir,
+        session_state_path.parent,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
 
     return AppConfig(
-        app_env=os.getenv("APP_ENV", "development"),
-        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        app_env=source.get("APP_ENV", "development"),
+        log_level=source.get("LOG_LEVEL", "INFO").upper(),
+        app_name=source.get("APP_NAME", "Local Meeting Notes"),
         data_dir=data_dir,
         database_path=database_path,
         transcript_output_dir=transcript_output_dir,
         export_output_dir=export_output_dir,
         temp_output_dir=temp_output_dir,
+        log_dir=log_dir,
+        session_state_path=session_state_path,
     )

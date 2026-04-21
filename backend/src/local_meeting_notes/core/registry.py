@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from ..action_extractor.service import ActionExtractorService
 from ..audio_capture.service import AudioCaptureService
 from ..config import AppConfig
@@ -15,7 +17,7 @@ from ..summarizer.service import SummarizerService
 from ..transcription_engine.service import TranscriptionEngineService
 
 
-def build_service_registry(config: AppConfig) -> dict[str, object]:
+def build_service_registry(config: AppConfig, logger: logging.Logger | None = None) -> dict[str, object]:
     """Register Phase 1 placeholder services in one predictable location."""
 
     return {
@@ -26,7 +28,7 @@ def build_service_registry(config: AppConfig) -> dict[str, object]:
         "speaker_attribution": SpeakerAttributionService(config),
         "summarizer": SummarizerService(config),
         "action_extractor": ActionExtractorService(config),
-        "storage": StorageService(config),
+        "storage": StorageService(config, logger=logger),
         "microsoft_integration": MicrosoftIntegrationService(config),
         "export_service": ExportService(config),
     }

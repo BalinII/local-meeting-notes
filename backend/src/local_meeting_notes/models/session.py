@@ -1,4 +1,4 @@
-"""Shared session models used by placeholder services."""
+"""Session models used by the mock CLI lifecycle."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -6,9 +6,10 @@ from pathlib import Path
 
 @dataclass(slots=True)
 class MeetingSession:
-    """Represents a local meeting workspace without real capture state yet."""
+    """Represents a local mock meeting session."""
 
     meeting_id: str
     title: str
     workspace_dir: Path
+    status: str = "active"
     participants: list[str] = field(default_factory=list)

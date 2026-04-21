@@ -9,7 +9,14 @@ Phase 1 focuses on repository structure only:
 - Placeholder modules for the future meeting pipeline
 - Windows-oriented setup and helper scripts
 
-No real meeting logic is implemented yet.
+Phase 2 adds a minimal backend skeleton:
+- config loading
+- logging
+- SQLite schema bootstrap
+- base record models
+- mock meeting session CLI
+
+No real transcription, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
 
@@ -119,7 +126,10 @@ Each package exposes a stub service and clear docstrings so Phase 2 can add impl
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e .\backend
-python -m local_meeting_notes.app
+python -m local_meeting_notes.app init
+python -m local_meeting_notes.app db bootstrap
+python -m local_meeting_notes.app session start --title "Mock Local Meeting"
+python -m local_meeting_notes.app session stop
 ```
 
 ### Frontend
@@ -142,4 +152,5 @@ npm run tauri:dev
 - The app is designed for local data storage first.
 - SQLite remains the default persistence target.
 - Microsoft integration is metadata-oriented only in this scaffold.
-- No Teams bot, cloud pipeline, or production capture flow is included in Phase 1.
+- Mock transcript segments are used for the CLI-backed demo flow.
+- No Teams bot, cloud pipeline, or production capture flow is included.

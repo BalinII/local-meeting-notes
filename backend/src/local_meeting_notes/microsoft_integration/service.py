@@ -11,5 +11,5 @@ class MicrosoftIntegrationService:
     def status(self) -> PlaceholderStatus:
         return PlaceholderStatus(
             component="microsoft_integration",
-            message="Reserved for local auth-assisted calendar and meeting metadata lookups.",
+            message="Reserved for optional metadata integration only; auth is not implemented here.",
         )

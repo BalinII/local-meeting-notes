@@ -10,6 +10,9 @@ readme = "../README.md"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.scripts]
+local-meeting-notes = "local_meeting_notes.app:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
@@ -24,6 +27,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

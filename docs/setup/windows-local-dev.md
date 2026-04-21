@@ -18,8 +18,10 @@ npm install
 ## 3. Run scaffold entrypoints
 
 ```powershell
-python -m local_meeting_notes.app
-npm run dev
+python -m local_meeting_notes.app init
+python -m local_meeting_notes.app db bootstrap
+python -m local_meeting_notes.app session start --title "Mock Local Meeting"
+python -m local_meeting_notes.app session stop
 ```
 
 ## 4. Run the desktop shell
@@ -32,4 +34,4 @@ npm run tauri:dev
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.
-- The current app is scaffolding only, with placeholder modules.
+- The current backend uses mock transcript data only.

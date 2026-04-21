@@ -29,11 +29,13 @@ backend/data/exports/*
 backend/data/meetings/*
 backend/data/transcripts/*
 backend/data/tmp/*
+backend/data/logs/*
 !backend/data/audio/.gitkeep
 !backend/data/exports/.gitkeep
 !backend/data/meetings/.gitkeep
 !backend/data/transcripts/.gitkeep
 !backend/data/tmp/.gitkeep
+!backend/data/logs/.gitkeep
 
 .DS_Store
 Thumbs.db
