@@ -23,6 +23,7 @@ src/local_meeting_notes/audio_capture/worker.py
 src/local_meeting_notes/core/__init__.py
 src/local_meeting_notes/core/registry.py
 src/local_meeting_notes/diarization_engine/__init__.py
+src/local_meeting_notes/diarization_engine/providers.py
 src/local_meeting_notes/diarization_engine/service.py
 src/local_meeting_notes/export_service/__init__.py
 src/local_meeting_notes/export_service/service.py
