@@ -24,10 +24,16 @@ SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS transcript_segments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         meeting_id INTEGER NOT NULL,
+        capture_id TEXT NOT NULL DEFAULT '',
+        source_chunk_path TEXT NOT NULL DEFAULT '',
+        transcription_status TEXT NOT NULL DEFAULT 'pending',
         speaker_label TEXT NOT NULL,
         content TEXT NOT NULL,
         start_offset_seconds INTEGER NOT NULL,
         end_offset_seconds INTEGER NOT NULL,
+        provider_name TEXT NOT NULL DEFAULT 'mock',
+        model_name TEXT NOT NULL DEFAULT 'mock',
+        error_message TEXT,
         is_mock INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )

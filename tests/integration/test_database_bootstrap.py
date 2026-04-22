@@ -35,7 +35,12 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
         row = connection.execute(
             "SELECT external_id, title FROM meetings WHERE id = ?", (meeting_id,)
         ).fetchone()
+        columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(transcript_segments)").fetchall()
+        }
 
     assert {"meetings", "participants", "transcript_segments", "summaries", "actions", "decisions"}.issubset(tables)
+    assert {"capture_id", "source_chunk_path", "transcription_status", "provider_name", "model_name", "error_message"}.issubset(columns)
     assert row["external_id"] == "mock-test-001"
     assert row["title"] == "Mock Test Meeting"

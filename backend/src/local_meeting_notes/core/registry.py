@@ -23,7 +23,7 @@ def build_service_registry(config: AppConfig, logger: logging.Logger | None = No
     return {
         "meeting_detector": MeetingDetectorService(config),
         "audio_capture": AudioCaptureService(config, logger=logger),
-        "transcription_engine": TranscriptionEngineService(config),
+        "transcription_engine": TranscriptionEngineService(config, logger=logger),
         "diarization_engine": DiarizationEngineService(config),
         "speaker_attribution": SpeakerAttributionService(config),
         "summarizer": SummarizerService(config),

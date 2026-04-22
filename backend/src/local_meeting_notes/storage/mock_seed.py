@@ -49,6 +49,9 @@ def build_mock_records(session: MeetingSession) -> dict[str, object]:
         TranscriptSegmentRecord(
             id=None,
             meeting_id=0,
+            capture_id=session.meeting_id,
+            source_chunk_path="mock/chunk-001.wav",
+            transcription_status="completed",
             speaker_label="Speaker 1",
             content="This is a mocked transcript segment for the backend skeleton.",
             start_offset_seconds=0,
@@ -57,6 +60,9 @@ def build_mock_records(session: MeetingSession) -> dict[str, object]:
         TranscriptSegmentRecord(
             id=None,
             meeting_id=0,
+            capture_id=session.meeting_id,
+            source_chunk_path="mock/chunk-002.wav",
+            transcription_status="completed",
             speaker_label="Speaker 2",
             content="Action item: prepare the Phase 3 implementation plan.",
             start_offset_seconds=13,

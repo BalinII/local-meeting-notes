@@ -41,6 +41,21 @@ Notes:
 
 ## 5. Run the desktop shell
 
+## 5. Run local transcription
+
+```powershell
+python -m local_meeting_notes.app transcript transcribe --capture-id "<capture-id>"
+python -m local_meeting_notes.app transcript status --capture-id "<capture-id>"
+python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
+```
+
+Notes:
+- The MVP transcription flow is batch-oriented, not streaming.
+- `faster-whisper` runs locally and may download model files on first use.
+- Chunk failures are persisted in SQLite so you can inspect partial results.
+
+## 6. Run the desktop shell
+
 ```powershell
 npm run tauri:dev
 ```
@@ -49,5 +64,5 @@ npm run tauri:dev
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.
-- The current backend uses mock transcript data only.
+- The current backend has real local chunk transcription but no diarization yet.
 - Windows loopback capture is practical but fragile on some drivers and devices.

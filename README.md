@@ -22,7 +22,12 @@ Phase 3 adds the first real MVP capability:
 - chunked `.wav` output under `backend/data/audio`
 - system loopback plus microphone capture where the local machine supports it
 
-No real transcription, Microsoft auth, or Teams bot logic is implemented.
+Phase 4 adds the first local transcription pipeline:
+- batch transcription of captured audio chunks
+- SQLite persistence of transcript chunk metadata and text
+- CLI commands to transcribe a capture and inspect transcript segments
+
+No diarization, speaker attribution, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
 
@@ -140,6 +145,9 @@ python -m local_meeting_notes.app audio devices
 python -m local_meeting_notes.app audio start
 python -m local_meeting_notes.app audio status
 python -m local_meeting_notes.app audio stop
+python -m local_meeting_notes.app transcript transcribe --capture-id "<capture-id>"
+python -m local_meeting_notes.app transcript status --capture-id "<capture-id>"
+python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
 ```
 
 ### Windows Audio Libraries
@@ -150,6 +158,14 @@ The MVP capture path uses:
 - `numpy`: frame handling for mono normalization and chunk shaping
 
 This is intentionally pragmatic rather than abstract. Windows loopback capture is still fragile across audio drivers, Bluetooth devices, sample-rate mismatches, and some virtual audio devices.
+
+### Local Transcription Libraries
+
+The MVP transcription path uses:
+- `faster-whisper`: practical offline chunk transcription with a clean Python API
+- `soundfile`: chunk duration inspection and audio metadata access
+
+The provider is wrapped so we can swap transcription backends later without rewriting the CLI or persistence layer.
 
 ### Frontend
 
@@ -173,6 +189,7 @@ npm run tauri:dev
 - Microsoft integration is metadata-oriented only in this scaffold.
 - Mock transcript segments are used for the CLI-backed demo flow.
 - Audio capture writes timestamped local chunks into `backend/data/audio/<capture-id>/`.
+- Transcript segments are persisted per chunk in SQLite, including chunk path and failure state.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.

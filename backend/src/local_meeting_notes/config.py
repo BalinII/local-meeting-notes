@@ -16,6 +16,9 @@ class AppConfig:
     audio_sample_rate: int
     audio_channels: int
     audio_capture_mode: str
+    transcription_provider: str
+    transcription_model_size: str
+    transcription_device: str
     data_dir: Path
     audio_output_dir: Path
     database_path: Path
@@ -79,6 +82,9 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         audio_sample_rate=int(source.get("AUDIO_SAMPLE_RATE", "16000")),
         audio_channels=int(source.get("AUDIO_CHANNELS", "1")),
         audio_capture_mode=source.get("AUDIO_CAPTURE_MODE", "windows-loopback+microphone"),
+        transcription_provider=source.get("TRANSCRIPTION_PROVIDER", "faster-whisper"),
+        transcription_model_size=source.get("TRANSCRIPTION_MODEL_SIZE", "tiny"),
+        transcription_device=source.get("TRANSCRIPTION_DEVICE", "cpu"),
         data_dir=data_dir,
         audio_output_dir=audio_output_dir,
         database_path=database_path,

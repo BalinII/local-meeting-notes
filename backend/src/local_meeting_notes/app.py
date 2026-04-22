@@ -23,6 +23,8 @@ from .storage.repository import (
     update_meeting_status,
 )
 from .storage.session_state import clear_session_state, read_session_state, write_session_state
+from .transcription_engine.providers import TranscriptionDependencyError
+from .transcription_engine.service import TranscriptionEngineService
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +62,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     audio_worker = audio_subparsers.add_parser("worker", help=argparse.SUPPRESS)
     audio_worker.add_argument("--state-path", required=True)
+
+    transcript_parser = subparsers.add_parser("transcript", help="Local transcription commands.")
+    transcript_subparsers = transcript_parser.add_subparsers(dest="transcript_command", required=True)
+
+    transcript_transcribe = transcript_subparsers.add_parser(
+        "transcribe", help="Batch transcribe a capture by capture id."
+    )
+    transcript_transcribe.add_argument("--capture-id", required=True)
+
+    transcript_status = transcript_subparsers.add_parser(
+        "status", help="Show transcription status for a capture."
+    )
+    transcript_status.add_argument("--capture-id", required=True)
+
+    transcript_list = transcript_subparsers.add_parser(
+        "list", help="List transcript segments for a capture."
+    )
+    transcript_list.add_argument("--capture-id", required=True)
 
     return parser
 
@@ -216,6 +236,61 @@ def run_audio_worker_entry(state_path: str) -> int:
     return run_capture_worker(state.config, Path(state_path))
 
 
+def _get_transcription_service() -> TranscriptionEngineService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["transcription_engine"]
+    assert isinstance(service, TranscriptionEngineService)
+    return service
+
+
+def run_transcript_transcribe(capture_id: str) -> int:
+    service = _get_transcription_service()
+    try:
+        result = service.transcribe_capture(capture_id)
+    except (RuntimeError, TranscriptionDependencyError) as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Capture: {result['capture_id']}")
+    print(f"Total chunks: {result['total_chunks']}")
+    print(f"Completed chunks: {result['completed_chunks']}")
+    print(f"Failed chunks: {result['failed_chunks']}")
+    return 0
+
+
+def run_transcript_status(capture_id: str) -> int:
+    service = _get_transcription_service()
+    status = service.get_status(capture_id)
+    print(f"Capture: {status['capture_id']}")
+    print(f"Status: {status['status']}")
+    print(f"Total segments: {status['total_segments']}")
+    print(f"Completed segments: {status['completed_segments']}")
+    print(f"Failed segments: {status['failed_segments']}")
+    if "pending_segments" in status:
+        print(f"Pending segments: {status['pending_segments']}")
+    return 0
+
+
+def run_transcript_list(capture_id: str) -> int:
+    service = _get_transcription_service()
+    segments = service.list_segments(capture_id)
+    if not segments:
+        print(f"No transcript segments found for capture: {capture_id}")
+        return 0
+
+    for segment in segments:
+        print(
+            f"[{segment['transcription_status']}] "
+            f"{segment['start_offset_seconds']}-{segment['end_offset_seconds']}s "
+            f"{segment['source_chunk_path']}"
+        )
+        if segment["content"]:
+            print(segment["content"])
+        if segment["error_message"]:
+            print(f"Error: {segment['error_message']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -244,6 +319,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_audio_status()
     if args.command == "audio" and args.audio_command == "worker":
         return run_audio_worker_entry(args.state_path)
+    if args.command == "transcript" and args.transcript_command == "transcribe":
+        return run_transcript_transcribe(args.capture_id)
+    if args.command == "transcript" and args.transcript_command == "status":
+        return run_transcript_status(args.capture_id)
+    if args.command == "transcript" and args.transcript_command == "list":
+        return run_transcript_list(args.capture_id)
 
     parser.error("Unsupported command.")
     return 2

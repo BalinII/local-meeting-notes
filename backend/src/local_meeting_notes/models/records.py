@@ -27,10 +27,16 @@ class ParticipantRecord:
 class TranscriptSegmentRecord:
     id: int | None
     meeting_id: int
+    capture_id: str
+    source_chunk_path: str
+    transcription_status: str
     speaker_label: str
     content: str
     start_offset_seconds: int
     end_offset_seconds: int
+    provider_name: str = "mock"
+    model_name: str = "mock"
+    error_message: str | None = None
     is_mock: bool = True
 
 
