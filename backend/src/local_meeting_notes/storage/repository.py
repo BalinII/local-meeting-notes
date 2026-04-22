@@ -8,6 +8,7 @@ from ..models import (
     ActionRecord,
     DiarizationSegmentRecord,
     DecisionRecord,
+    FollowUpRecord,
     MeetingRecord,
     ParticipantRecord,
     SummaryRecord,
@@ -78,24 +79,103 @@ def insert_transcript_segment(
 
 def insert_summary(connection: sqlite3.Connection, summary: SummaryRecord) -> int:
     cursor = connection.execute(
-        "INSERT INTO summaries (meeting_id, content, summary_type) VALUES (?, ?, ?)",
-        (summary.meeting_id, summary.content, summary.summary_type),
+        """
+        INSERT INTO summaries (meeting_id, capture_id, title, content, summary_type, evidence_snippet)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            summary.meeting_id,
+            summary.capture_id,
+            summary.title,
+            summary.content,
+            summary.summary_type,
+            summary.evidence_snippet,
+        ),
     )
     return int(cursor.lastrowid)
 
 
 def insert_action(connection: sqlite3.Connection, action: ActionRecord) -> int:
     cursor = connection.execute(
-        "INSERT INTO actions (meeting_id, description, owner_name, status) VALUES (?, ?, ?, ?)",
-        (action.meeting_id, action.description, action.owner_name, action.status),
+        """
+        INSERT INTO actions (
+            meeting_id,
+            capture_id,
+            description,
+            owner_name,
+            status,
+            evidence_snippet,
+            start_offset_seconds,
+            end_offset_seconds
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            action.meeting_id,
+            action.capture_id,
+            action.description,
+            action.owner_name,
+            action.status,
+            action.evidence_snippet,
+            action.start_offset_seconds,
+            action.end_offset_seconds,
+        ),
     )
     return int(cursor.lastrowid)
 
 
 def insert_decision(connection: sqlite3.Connection, decision: DecisionRecord) -> int:
     cursor = connection.execute(
-        "INSERT INTO decisions (meeting_id, description) VALUES (?, ?)",
-        (decision.meeting_id, decision.description),
+        """
+        INSERT INTO decisions (
+            meeting_id,
+            description,
+            capture_id,
+            evidence_snippet,
+            start_offset_seconds,
+            end_offset_seconds
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            decision.meeting_id,
+            decision.description,
+            decision.capture_id,
+            decision.evidence_snippet,
+            decision.start_offset_seconds,
+            decision.end_offset_seconds,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def insert_follow_up(connection: sqlite3.Connection, follow_up: FollowUpRecord) -> int:
+    cursor = connection.execute(
+        """
+        INSERT INTO follow_ups (
+            meeting_id,
+            capture_id,
+            description,
+            follow_up_type,
+            owner_name,
+            status,
+            evidence_snippet,
+            start_offset_seconds,
+            end_offset_seconds
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            follow_up.meeting_id,
+            follow_up.capture_id,
+            follow_up.description,
+            follow_up.follow_up_type,
+            follow_up.owner_name,
+            follow_up.status,
+            follow_up.evidence_snippet,
+            follow_up.start_offset_seconds,
+            follow_up.end_offset_seconds,
+        ),
     )
     return int(cursor.lastrowid)
 
@@ -170,6 +250,70 @@ def fetch_transcription_status(connection: sqlite3.Connection, capture_id: str) 
         """,
         (capture_id,),
     ).fetchone()
+
+
+def delete_summaries_for_capture(connection: sqlite3.Connection, capture_id: str) -> None:
+    connection.execute("DELETE FROM summaries WHERE capture_id = ?", (capture_id,))
+
+
+def delete_actions_for_capture(connection: sqlite3.Connection, capture_id: str) -> None:
+    connection.execute("DELETE FROM actions WHERE capture_id = ?", (capture_id,))
+
+
+def delete_decisions_for_capture(connection: sqlite3.Connection, capture_id: str) -> None:
+    connection.execute("DELETE FROM decisions WHERE capture_id = ?", (capture_id,))
+
+
+def delete_follow_ups_for_capture(connection: sqlite3.Connection, capture_id: str) -> None:
+    connection.execute("DELETE FROM follow_ups WHERE capture_id = ?", (capture_id,))
+
+
+def fetch_summaries_for_capture(connection: sqlite3.Connection, capture_id: str) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM summaries
+        WHERE capture_id = ?
+        ORDER BY summary_type, id
+        """,
+        (capture_id,),
+    ).fetchall()
+
+
+def fetch_actions_for_capture(connection: sqlite3.Connection, capture_id: str) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM actions
+        WHERE capture_id = ?
+        ORDER BY id
+        """,
+        (capture_id,),
+    ).fetchall()
+
+
+def fetch_decisions_for_capture(connection: sqlite3.Connection, capture_id: str) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM decisions
+        WHERE capture_id = ?
+        ORDER BY id
+        """,
+        (capture_id,),
+    ).fetchall()
+
+
+def fetch_follow_ups_for_capture(connection: sqlite3.Connection, capture_id: str) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM follow_ups
+        WHERE capture_id = ?
+        ORDER BY follow_up_type, id
+        """,
+        (capture_id,),
+    ).fetchall()
 
 
 def insert_diarization_segment(

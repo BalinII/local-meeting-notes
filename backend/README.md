@@ -11,6 +11,8 @@ This package contains:
 - audio capture services
 - local chunk transcription
 - local diarization
+- local summary generation
+- local action and decision extraction
 
 ## Windows Loopback Notes
 
@@ -57,3 +59,25 @@ This package contains:
   - `python -m local_meeting_notes.app diarize run --capture-id <capture-id>`
   - `python -m local_meeting_notes.app diarize status --capture-id <capture-id>`
   - `python -m local_meeting_notes.app diarize list --capture-id <capture-id>`
+
+## Local Summary And Extraction Notes
+
+- Phase 6 adds swappable service boundaries for:
+  - summary generation
+  - action and decision extraction
+- The default implementations are local and heuristic, designed to work on top of imperfect diarization rather than assuming strong speaker identity.
+- Outputs are persisted in SQLite for each `capture_id`:
+  - `summaries`
+  - `actions`
+  - `decisions`
+  - `follow_ups`
+- Evidence is stored alongside outputs where practical so the CLI can show why an item was generated.
+- Ownership remains intentionally conservative:
+  - `Speaker 1`, `Speaker 2`, and similar generic labels are allowed
+  - `Unknown` or `Unconfirmed speaker` is preferred over invented certainty
+- Follow-ups include open questions and blockers or risks so unresolved items are still inspectable even when they are not clear action items.
+- CLI commands:
+  - `python -m local_meeting_notes.app summary generate --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app summary show --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app actions extract --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app actions list --capture-id <capture-id>`

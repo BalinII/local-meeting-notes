@@ -59,17 +59,24 @@ class DiarizationSegmentRecord:
 class SummaryRecord:
     id: int | None
     meeting_id: int
+    capture_id: str
+    title: str
     content: str
     summary_type: str = "mock"
+    evidence_snippet: str | None = None
 
 
 @dataclass(slots=True)
 class ActionRecord:
     id: int | None
     meeting_id: int
+    capture_id: str
     description: str
     owner_name: str | None = None
     status: str = "open"
+    evidence_snippet: str | None = None
+    start_offset_seconds: int | None = None
+    end_offset_seconds: int | None = None
 
 
 @dataclass(slots=True)
@@ -77,3 +84,21 @@ class DecisionRecord:
     id: int | None
     meeting_id: int
     description: str
+    capture_id: str
+    evidence_snippet: str | None = None
+    start_offset_seconds: int | None = None
+    end_offset_seconds: int | None = None
+
+
+@dataclass(slots=True)
+class FollowUpRecord:
+    id: int | None
+    meeting_id: int
+    capture_id: str
+    description: str
+    follow_up_type: str
+    owner_name: str | None = None
+    status: str = "open"
+    evidence_snippet: str | None = None
+    start_offset_seconds: int | None = None
+    end_offset_seconds: int | None = None

@@ -12,6 +12,8 @@ from .audio_capture.worker import run_capture_worker
 from .audio_capture.service import AudioCaptureService
 from .diarization_engine.service import DiarizationEngineService
 from .models import ActionRecord, DecisionRecord, SummaryRecord
+from .summarizer.service import SummarizerService
+from .action_extractor.service import ActionExtractorService
 from .storage.database import connection_context
 from .storage.mock_seed import build_mock_records, build_mock_session
 from .storage.repository import (
@@ -97,6 +99,30 @@ def build_parser() -> argparse.ArgumentParser:
         "list", help="List diarization segments for a capture."
     )
     diarize_list.add_argument("--capture-id", required=True)
+
+    summary_parser = subparsers.add_parser("summary", help="Summary generation commands.")
+    summary_subparsers = summary_parser.add_subparsers(dest="summary_command", required=True)
+
+    summary_generate = summary_subparsers.add_parser(
+        "generate", help="Generate summaries for a capture."
+    )
+    summary_generate.add_argument("--capture-id", required=True)
+
+    summary_show = summary_subparsers.add_parser("show", help="Show summaries for a capture.")
+    summary_show.add_argument("--capture-id", required=True)
+
+    actions_parser = subparsers.add_parser("actions", help="Action extraction commands.")
+    actions_subparsers = actions_parser.add_subparsers(dest="actions_command", required=True)
+
+    actions_extract = actions_subparsers.add_parser(
+        "extract", help="Extract actions, decisions, and follow-ups for a capture."
+    )
+    actions_extract.add_argument("--capture-id", required=True)
+
+    actions_list = actions_subparsers.add_parser(
+        "list", help="List extracted actions, decisions, and follow-ups for a capture."
+    )
+    actions_list.add_argument("--capture-id", required=True)
 
     return parser
 
@@ -364,6 +390,96 @@ def run_diarize_list(capture_id: str) -> int:
     return 0
 
 
+def _get_summarizer_service() -> SummarizerService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["summarizer"]
+    assert isinstance(service, SummarizerService)
+    return service
+
+
+def run_summary_generate(capture_id: str) -> int:
+    service = _get_summarizer_service()
+    try:
+        result = service.generate_summaries(capture_id)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Capture: {result['capture_id']}")
+    print(f"Summary count: {result['summary_count']}")
+    return 0
+
+
+def run_summary_show(capture_id: str) -> int:
+    service = _get_summarizer_service()
+    summaries = service.list_summaries(capture_id)
+    if not summaries:
+        print(f"No summaries found for capture: {capture_id}")
+        return 0
+
+    for summary in summaries:
+        print(f"[{summary['summary_type']}] {summary['title']}")
+        print(summary["content"])
+        if summary["evidence_snippet"]:
+            print(f"Evidence: {summary['evidence_snippet']}")
+    return 0
+
+
+def _get_action_extractor_service() -> ActionExtractorService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["action_extractor"]
+    assert isinstance(service, ActionExtractorService)
+    return service
+
+
+def run_actions_extract(capture_id: str) -> int:
+    service = _get_action_extractor_service()
+    try:
+        result = service.extract_capture(capture_id)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Capture: {result['capture_id']}")
+    print(f"Actions: {result['actions']}")
+    print(f"Decisions: {result['decisions']}")
+    print(f"Follow-ups: {result['follow_ups']}")
+    return 0
+
+
+def run_actions_list(capture_id: str) -> int:
+    service = _get_action_extractor_service()
+    payload = service.list_outputs(capture_id)
+
+    if not payload["actions"] and not payload["decisions"] and not payload["follow_ups"]:
+        print(f"No extracted outputs found for capture: {capture_id}")
+        return 0
+
+    if payload["actions"]:
+        print("Actions:")
+        for item in payload["actions"]:
+            owner = item["owner_name"] or "Unconfirmed speaker"
+            print(f"- {item['description']} [{owner}]")
+            if item["evidence_snippet"]:
+                print(f"  Evidence: {item['evidence_snippet']}")
+
+    if payload["decisions"]:
+        print("Decisions:")
+        for item in payload["decisions"]:
+            print(f"- {item['description']}")
+            if item["evidence_snippet"]:
+                print(f"  Evidence: {item['evidence_snippet']}")
+
+    if payload["follow_ups"]:
+        print("Follow-ups:")
+        for item in payload["follow_ups"]:
+            owner = item["owner_name"] or "Unconfirmed speaker"
+            print(f"- [{item['follow_up_type']}] {item['description']} [{owner}]")
+            if item["evidence_snippet"]:
+                print(f"  Evidence: {item['evidence_snippet']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -404,6 +520,14 @@ def main(argv: list[str] | None = None) -> int:
         return run_diarize_status(args.capture_id)
     if args.command == "diarize" and args.diarize_command == "list":
         return run_diarize_list(args.capture_id)
+    if args.command == "summary" and args.summary_command == "generate":
+        return run_summary_generate(args.capture_id)
+    if args.command == "summary" and args.summary_command == "show":
+        return run_summary_show(args.capture_id)
+    if args.command == "actions" and args.actions_command == "extract":
+        return run_actions_extract(args.capture_id)
+    if args.command == "actions" and args.actions_command == "list":
+        return run_actions_list(args.capture_id)
 
     parser.error("Unsupported command.")
     return 2

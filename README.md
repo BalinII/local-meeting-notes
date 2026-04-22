@@ -32,6 +32,12 @@ Phase 5 adds offline diarization:
 - SQLite persistence of diarization segments
 - generic speaker-labelled transcript inspection
 
+Phase 6 adds local summary and extraction:
+- executive and detailed summaries generated from persisted transcript segments
+- SQLite persistence for summaries, actions, decisions, and follow-ups
+- CLI commands to generate and inspect evidence-backed outputs
+- conservative ownership handling that tolerates imperfect diarization
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -156,6 +162,10 @@ python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
+python -m local_meeting_notes.app summary generate --capture-id "<capture-id>"
+python -m local_meeting_notes.app summary show --capture-id "<capture-id>"
+python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
+python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
 ```
 
 ### Windows Audio Libraries
@@ -183,6 +193,17 @@ The MVP diarization path uses:
 
 This is a practical offline MVP, not a claim of perfect speaker identity. The output is limited to generic labels like `Speaker 1`, `Speaker 2`, and `Speaker 3`.
 
+### Local Summary And Extraction Approach
+
+Phase 6 uses local heuristic services behind swappable provider boundaries:
+- `summarizer`: produces an executive summary plus a more detailed topic-oriented summary
+- `action_extractor`: extracts decisions, actions, follow-ups, blockers or risks, and open questions
+
+These services are intentionally conservative:
+- they rely on transcript evidence instead of inventing certainty
+- they use generic ownership such as `Speaker 1`, `Unknown`, or `Unconfirmed speaker`
+- they are designed to tolerate imperfect diarization rather than assuming speaker labels are always right
+
 ### Frontend
 
 ```powershell
@@ -207,6 +228,9 @@ npm run tauri:dev
 - Audio capture writes timestamped local chunks into `backend/data/audio/<capture-id>/`.
 - Transcript segments are persisted per chunk in SQLite, including chunk path and failure state.
 - Diarization segments are persisted separately and used to apply best-effort generic speaker labels onto transcript rows.
+- Summaries, actions, decisions, and follow-ups are persisted in SQLite by `capture_id`.
+- Summary and extraction outputs include transcript evidence snippets where practical.
+- Ownership may remain `Unknown` or `Unconfirmed speaker` when diarization is weak or missing.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.

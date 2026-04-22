@@ -72,18 +72,29 @@ def build_mock_records(session: MeetingSession) -> dict[str, object]:
     summary = SummaryRecord(
         id=None,
         meeting_id=0,
+        capture_id=session.meeting_id,
+        title="Executive Summary",
         content="Mock summary: alignment on backend skeleton and next implementation steps.",
+        evidence_snippet="This is a mocked transcript segment for the backend skeleton.",
     )
     action = ActionRecord(
         id=None,
         meeting_id=0,
+        capture_id=session.meeting_id,
         description="Prepare Phase 3 implementation plan.",
         owner_name="Jordan",
+        evidence_snippet="Action item: prepare the Phase 3 implementation plan.",
+        start_offset_seconds=13,
+        end_offset_seconds=26,
     )
     decision = DecisionRecord(
         id=None,
         meeting_id=0,
         description="Keep the solution local-first and Windows-oriented.",
+        capture_id=session.meeting_id,
+        evidence_snippet="Keep the solution local-first and Windows-oriented.",
+        start_offset_seconds=0,
+        end_offset_seconds=12,
     )
     return {
         "meeting": meeting,

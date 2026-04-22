@@ -29,6 +29,36 @@ DIARIZATION_SEGMENT_MIGRATIONS = {
     "error_message": "ALTER TABLE diarization_segments ADD COLUMN error_message TEXT",
 }
 
+SUMMARY_MIGRATIONS = {
+    "capture_id": "ALTER TABLE summaries ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "title": "ALTER TABLE summaries ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+    "evidence_snippet": "ALTER TABLE summaries ADD COLUMN evidence_snippet TEXT",
+}
+
+ACTION_MIGRATIONS = {
+    "capture_id": "ALTER TABLE actions ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "evidence_snippet": "ALTER TABLE actions ADD COLUMN evidence_snippet TEXT",
+    "start_offset_seconds": "ALTER TABLE actions ADD COLUMN start_offset_seconds INTEGER",
+    "end_offset_seconds": "ALTER TABLE actions ADD COLUMN end_offset_seconds INTEGER",
+}
+
+DECISION_MIGRATIONS = {
+    "capture_id": "ALTER TABLE decisions ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "evidence_snippet": "ALTER TABLE decisions ADD COLUMN evidence_snippet TEXT",
+    "start_offset_seconds": "ALTER TABLE decisions ADD COLUMN start_offset_seconds INTEGER",
+    "end_offset_seconds": "ALTER TABLE decisions ADD COLUMN end_offset_seconds INTEGER",
+}
+
+FOLLOW_UP_MIGRATIONS = {
+    "capture_id": "ALTER TABLE follow_ups ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "follow_up_type": "ALTER TABLE follow_ups ADD COLUMN follow_up_type TEXT NOT NULL DEFAULT 'follow_up'",
+    "owner_name": "ALTER TABLE follow_ups ADD COLUMN owner_name TEXT",
+    "status": "ALTER TABLE follow_ups ADD COLUMN status TEXT NOT NULL DEFAULT 'open'",
+    "evidence_snippet": "ALTER TABLE follow_ups ADD COLUMN evidence_snippet TEXT",
+    "start_offset_seconds": "ALTER TABLE follow_ups ADD COLUMN start_offset_seconds INTEGER",
+    "end_offset_seconds": "ALTER TABLE follow_ups ADD COLUMN end_offset_seconds INTEGER",
+}
+
 
 def create_connection(database_path: Path) -> sqlite3.Connection:
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,4 +106,24 @@ def _apply_schema_migrations(connection: sqlite3.Connection) -> None:
         }
     for column_name, statement in DIARIZATION_SEGMENT_MIGRATIONS.items():
         if column_name not in diarization_columns:
+            connection.execute(statement)
+
+    _apply_table_migrations(connection, "summaries", SUMMARY_MIGRATIONS)
+    _apply_table_migrations(connection, "actions", ACTION_MIGRATIONS)
+    _apply_table_migrations(connection, "decisions", DECISION_MIGRATIONS)
+    _apply_table_migrations(connection, "follow_ups", FOLLOW_UP_MIGRATIONS)
+
+
+def _apply_table_migrations(
+    connection: sqlite3.Connection, table_name: str, migrations: dict[str, str]
+) -> None:
+    table_names = {
+        row["name"]
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    if table_name not in table_names:
+        return
+    columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    for column_name, statement in migrations.items():
+        if column_name not in columns:
             connection.execute(statement)

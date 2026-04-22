@@ -43,9 +43,29 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
             column["name"]
             for column in connection.execute("PRAGMA table_info(diarization_segments)").fetchall()
         }
+        summary_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(summaries)").fetchall()
+        }
+        action_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(actions)").fetchall()
+        }
+        decision_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(decisions)").fetchall()
+        }
+        follow_up_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(follow_ups)").fetchall()
+        }
 
-    assert {"meetings", "participants", "transcript_segments", "summaries", "actions", "decisions"}.issubset(tables)
+    assert {"meetings", "participants", "transcript_segments", "summaries", "actions", "decisions", "follow_ups"}.issubset(tables)
     assert {"capture_id", "source_chunk_path", "transcription_status", "provider_name", "model_name", "error_message"}.issubset(columns)
     assert {"capture_id", "source_audio_path", "diarization_status", "speaker_label", "provider_name", "confidence", "error_message"}.issubset(diarization_columns)
+    assert {"capture_id", "title", "evidence_snippet"}.issubset(summary_columns)
+    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds"}.issubset(action_columns)
+    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds"}.issubset(decision_columns)
+    assert {"capture_id", "follow_up_type", "owner_name", "status", "evidence_snippet"}.issubset(follow_up_columns)
     assert row["external_id"] == "mock-test-001"
     assert row["title"] == "Mock Test Meeting"

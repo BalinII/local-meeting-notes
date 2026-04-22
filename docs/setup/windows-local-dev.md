@@ -72,9 +72,24 @@ Notes:
 npm run tauri:dev
 ```
 
-## Notes
+## 8. Generate summaries and extracted meeting outputs
+
+```powershell
+python -m local_meeting_notes.app summary generate --capture-id "<capture-id>"
+python -m local_meeting_notes.app summary show --capture-id "<capture-id>"
+python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
+python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
+```
+
+Notes:
+- Summary generation is local and transcript-driven.
+- Extraction is conservative and evidence-backed.
+- Ownership can stay `Unknown` or `Unconfirmed speaker` when diarization is missing or weak.
+- Follow-ups may include open questions and blockers or risks, not just explicit action items.
+
+## 9. Notes
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.
-- The current backend has real local chunk transcription and generic speaker diarization, but no participant identity mapping yet.
+- The current backend has real local chunk transcription, generic speaker diarization, and local heuristic summary or extraction services, but no participant identity mapping yet.
 - Windows loopback capture is practical but fragile on some drivers and devices.
