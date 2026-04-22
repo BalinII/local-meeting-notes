@@ -35,7 +35,7 @@ class FakeDiarizationProvider:
                 start_offset_seconds=0,
                 end_offset_seconds=1,
                 speaker_label="Speaker 2",
-                confidence=0.6,
+                confidence=None,
             )
         ]
 

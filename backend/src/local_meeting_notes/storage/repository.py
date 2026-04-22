@@ -249,14 +249,40 @@ def apply_speaker_labels_to_transcript_segments(
     diarization_rows = fetch_diarization_segments_for_capture(connection, capture_id)
     for transcript in transcript_rows:
         best_label = "Unknown"
-        best_overlap = 0
+        best_overlap_ratio = 0.0
+        best_midpoint_distance = None
+        transcript_duration = max(
+            0.5, transcript["end_offset_seconds"] - transcript["start_offset_seconds"]
+        )
+        transcript_midpoint = (
+            transcript["start_offset_seconds"] + transcript["end_offset_seconds"]
+        ) / 2
         for diarization in diarization_rows:
+            if diarization["diarization_status"] != "completed":
+                continue
             overlap = min(
                 transcript["end_offset_seconds"], diarization["end_offset_seconds"]
             ) - max(transcript["start_offset_seconds"], diarization["start_offset_seconds"])
-            if overlap > best_overlap:
-                best_overlap = overlap
+            if overlap > 0:
+                overlap_ratio = overlap / transcript_duration
+                if overlap_ratio > best_overlap_ratio:
+                    best_overlap_ratio = overlap_ratio
+                    best_label = diarization["speaker_label"]
+                    best_midpoint_distance = 0.0
+                continue
+
+            diarization_midpoint = (
+                diarization["start_offset_seconds"] + diarization["end_offset_seconds"]
+            ) / 2
+            midpoint_distance = abs(diarization_midpoint - transcript_midpoint)
+            if best_overlap_ratio == 0 and (
+                best_midpoint_distance is None or midpoint_distance < best_midpoint_distance
+            ):
+                best_midpoint_distance = midpoint_distance
                 best_label = diarization["speaker_label"]
+
+        if best_overlap_ratio < 0.2 and (best_midpoint_distance is None or best_midpoint_distance > 2.0):
+            best_label = "Unknown"
         connection.execute(
             "UPDATE transcript_segments SET speaker_label = ? WHERE id = ?",
             (best_label, transcript["id"]),

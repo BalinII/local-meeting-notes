@@ -40,6 +40,7 @@ This package contains:
 
 - Phase 5 uses a swappable diarization provider boundary.
 - The default MVP provider uses `librosa` features plus `scikit-learn` clustering for offline generic speaker-turn segmentation.
+- This tuning pass prefers fewer, more stable speaker turns over aggressive short-window segmentation.
 - Diarization segments are stored in SQLite with:
   - `capture_id`
   - `source_audio_path`
@@ -47,9 +48,11 @@ This package contains:
   - `speaker_label`
   - offsets
   - provider metadata
-  - confidence when available
+  - confidence when it is actually meaningful
   - failure details
 - Transcript speaker labels are updated by best-effort timing overlap with diarization segments.
+- If confidence is not meaningful for the current provider, it is left unset instead of emitting fake precision.
+- Transcript speaker propagation still remains heuristic and may stay `Unknown` when overlap is weak.
 - CLI commands:
   - `python -m local_meeting_notes.app diarize run --capture-id <capture-id>`
   - `python -m local_meeting_notes.app diarize status --capture-id <capture-id>`

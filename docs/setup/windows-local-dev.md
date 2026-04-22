@@ -64,7 +64,7 @@ python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
 Notes:
 - Diarization is batch/offline and uses generic speaker labels only.
 - Transcript-to-speaker alignment is best-effort by timing overlap.
-- Imperfect alignment is expected on noisy audio and overlapping speech.
+- This tuning pass reduces fragmentation, but imperfect alignment is still expected on noisy audio, overlapping speech, and rapid interruptions.
 
 ## 7. Run the desktop shell
 
