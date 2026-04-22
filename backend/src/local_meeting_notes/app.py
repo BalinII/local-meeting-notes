@@ -11,6 +11,7 @@ from .audio_capture.dependencies import AudioDependencyError
 from .audio_capture.worker import run_capture_worker
 from .audio_capture.service import AudioCaptureService
 from .diarization_engine.service import DiarizationEngineService
+from .local_llm import LocalLlmClientError, build_local_llm_client
 from .models import ActionRecord, DecisionRecord, SummaryRecord
 from .summarizer.service import SummarizerService
 from .action_extractor.service import ActionExtractorService
@@ -107,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
         "generate", help="Generate summaries for a capture."
     )
     summary_generate.add_argument("--capture-id", required=True)
+    summary_generate.add_argument("--provider", choices=("heuristic", "local_llm"))
 
     summary_show = summary_subparsers.add_parser("show", help="Show summaries for a capture.")
     summary_show.add_argument("--capture-id", required=True)
@@ -118,11 +120,16 @@ def build_parser() -> argparse.ArgumentParser:
         "extract", help="Extract actions, decisions, and follow-ups for a capture."
     )
     actions_extract.add_argument("--capture-id", required=True)
+    actions_extract.add_argument("--provider", choices=("heuristic", "local_llm"))
 
     actions_list = actions_subparsers.add_parser(
         "list", help="List extracted actions, decisions, and follow-ups for a capture."
     )
     actions_list.add_argument("--capture-id", required=True)
+
+    llm_parser = subparsers.add_parser("llm", help="Local LLM runtime commands.")
+    llm_subparsers = llm_parser.add_subparsers(dest="llm_command", required=True)
+    llm_subparsers.add_parser("check", help="Check whether the local LLM runtime is reachable.")
 
     return parser
 
@@ -397,16 +404,19 @@ def _get_summarizer_service() -> SummarizerService:
     return service
 
 
-def run_summary_generate(capture_id: str) -> int:
+def run_summary_generate(capture_id: str, provider_name: str | None = None) -> int:
     service = _get_summarizer_service()
     try:
-        result = service.generate_summaries(capture_id)
+        result = service.generate_summaries(capture_id, provider_name=provider_name)
     except RuntimeError as exc:
         print(str(exc))
         return 1
 
     print(f"Capture: {result['capture_id']}")
     print(f"Summary count: {result['summary_count']}")
+    print(f"Provider: {result['provider_name']}")
+    if result.get("model_name"):
+        print(f"Model: {result['model_name']}")
     return 0
 
 
@@ -422,6 +432,9 @@ def run_summary_show(capture_id: str) -> int:
         print(summary["content"])
         if summary["evidence_snippet"]:
             print(f"Evidence: {summary['evidence_snippet']}")
+        if summary["provider_name"]:
+            model_suffix = f" ({summary['model_name']})" if summary["model_name"] else ""
+            print(f"Provider: {summary['provider_name']}{model_suffix}")
     return 0
 
 
@@ -432,10 +445,10 @@ def _get_action_extractor_service() -> ActionExtractorService:
     return service
 
 
-def run_actions_extract(capture_id: str) -> int:
+def run_actions_extract(capture_id: str, provider_name: str | None = None) -> int:
     service = _get_action_extractor_service()
     try:
-        result = service.extract_capture(capture_id)
+        result = service.extract_capture(capture_id, provider_name=provider_name)
     except RuntimeError as exc:
         print(str(exc))
         return 1
@@ -444,6 +457,9 @@ def run_actions_extract(capture_id: str) -> int:
     print(f"Actions: {result['actions']}")
     print(f"Decisions: {result['decisions']}")
     print(f"Follow-ups: {result['follow_ups']}")
+    print(f"Provider: {result['provider_name']}")
+    if result.get("model_name"):
+        print(f"Model: {result['model_name']}")
     return 0
 
 
@@ -462,6 +478,9 @@ def run_actions_list(capture_id: str) -> int:
             print(f"- {item['description']} [{owner}]")
             if item["evidence_snippet"]:
                 print(f"  Evidence: {item['evidence_snippet']}")
+            if item["provider_name"]:
+                model_suffix = f" ({item['model_name']})" if item["model_name"] else ""
+                print(f"  Provider: {item['provider_name']}{model_suffix}")
 
     if payload["decisions"]:
         print("Decisions:")
@@ -469,6 +488,9 @@ def run_actions_list(capture_id: str) -> int:
             print(f"- {item['description']}")
             if item["evidence_snippet"]:
                 print(f"  Evidence: {item['evidence_snippet']}")
+            if item["provider_name"]:
+                model_suffix = f" ({item['model_name']})" if item["model_name"] else ""
+                print(f"  Provider: {item['provider_name']}{model_suffix}")
 
     if payload["follow_ups"]:
         print("Follow-ups:")
@@ -477,6 +499,25 @@ def run_actions_list(capture_id: str) -> int:
             print(f"- [{item['follow_up_type']}] {item['description']} [{owner}]")
             if item["evidence_snippet"]:
                 print(f"  Evidence: {item['evidence_snippet']}")
+            if item["provider_name"]:
+                model_suffix = f" ({item['model_name']})" if item["model_name"] else ""
+                print(f"  Provider: {item['provider_name']}{model_suffix}")
+    return 0
+
+
+def run_llm_check() -> int:
+    state = bootstrap_application()
+    client = build_local_llm_client(state.config)
+    try:
+        result = client.check()
+    except LocalLlmClientError as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Status: {result['status']}")
+    print(f"Base URL: {result['base_url']}")
+    print(f"Configured model: {result['model_name']}")
+    print(f"Visible models: {len(result['models'])}")
     return 0
 
 
@@ -521,13 +562,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "diarize" and args.diarize_command == "list":
         return run_diarize_list(args.capture_id)
     if args.command == "summary" and args.summary_command == "generate":
-        return run_summary_generate(args.capture_id)
+        return run_summary_generate(args.capture_id, provider_name=args.provider)
     if args.command == "summary" and args.summary_command == "show":
         return run_summary_show(args.capture_id)
     if args.command == "actions" and args.actions_command == "extract":
-        return run_actions_extract(args.capture_id)
+        return run_actions_extract(args.capture_id, provider_name=args.provider)
     if args.command == "actions" and args.actions_command == "list":
         return run_actions_list(args.capture_id)
+    if args.command == "llm" and args.llm_command == "check":
+        return run_llm_check()
 
     parser.error("Unsupported command.")
     return 2

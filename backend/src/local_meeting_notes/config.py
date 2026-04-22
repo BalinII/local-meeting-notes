@@ -21,6 +21,12 @@ class AppConfig:
     transcription_device: str
     diarization_provider: str
     diarization_max_speakers: int
+    summary_provider: str
+    action_extraction_provider: str
+    local_llm_base_url: str
+    local_llm_model: str
+    local_llm_timeout_seconds: int
+    local_llm_max_transcript_chars: int
     data_dir: Path
     audio_output_dir: Path
     database_path: Path
@@ -89,6 +95,12 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         transcription_device=source.get("TRANSCRIPTION_DEVICE", "cpu"),
         diarization_provider=source.get("DIARIZATION_PROVIDER", "librosa-clustering"),
         diarization_max_speakers=int(source.get("DIARIZATION_MAX_SPEAKERS", "3")),
+        summary_provider=source.get("SUMMARY_PROVIDER", "heuristic"),
+        action_extraction_provider=source.get("ACTION_EXTRACTION_PROVIDER", "heuristic"),
+        local_llm_base_url=source.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434"),
+        local_llm_model=source.get("LOCAL_LLM_MODEL", "llama3.1:8b"),
+        local_llm_timeout_seconds=int(source.get("LOCAL_LLM_TIMEOUT_SECONDS", "45")),
+        local_llm_max_transcript_chars=int(source.get("LOCAL_LLM_MAX_TRANSCRIPT_CHARS", "12000")),
         data_dir=data_dir,
         audio_output_dir=audio_output_dir,
         database_path=database_path,

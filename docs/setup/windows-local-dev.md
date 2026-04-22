@@ -87,9 +87,24 @@ Notes:
 - Ownership can stay `Unknown` or `Unconfirmed speaker` when diarization is missing or weak.
 - Follow-ups may include open questions and blockers or risks, not just explicit action items.
 
-## 9. Notes
+## 9. Run Ollama for local LLM mode
+
+```powershell
+ollama serve
+ollama pull llama3.1:8b
+python -m local_meeting_notes.app llm check
+python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
+python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
+```
+
+Notes:
+- `local_llm` uses Ollama first and keeps the pipeline local-first.
+- If the runtime is unavailable or returns invalid JSON, the app falls back to the heuristic provider.
+- Keep `LOCAL_LLM_MODEL` configurable because different local machines may need a smaller or faster model.
+
+## 10. Notes
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.
-- The current backend has real local chunk transcription, generic speaker diarization, and local heuristic summary or extraction services, but no participant identity mapping yet.
+- The current backend has real local chunk transcription, generic speaker diarization, heuristic summary or extraction services, and an Ollama-first local LLM provider option, but no participant identity mapping yet.
 - Windows loopback capture is practical but fragile on some drivers and devices.

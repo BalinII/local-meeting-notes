@@ -47,6 +47,9 @@ SCHEMA_STATEMENTS = (
         content TEXT NOT NULL,
         summary_type TEXT NOT NULL DEFAULT 'mock',
         evidence_snippet TEXT,
+        provider_name TEXT NOT NULL DEFAULT 'heuristic',
+        model_name TEXT,
+        generated_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -61,6 +64,9 @@ SCHEMA_STATEMENTS = (
         evidence_snippet TEXT,
         start_offset_seconds INTEGER,
         end_offset_seconds INTEGER,
+        provider_name TEXT NOT NULL DEFAULT 'heuristic',
+        model_name TEXT,
+        generated_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -73,6 +79,9 @@ SCHEMA_STATEMENTS = (
         evidence_snippet TEXT,
         start_offset_seconds INTEGER,
         end_offset_seconds INTEGER,
+        provider_name TEXT NOT NULL DEFAULT 'heuristic',
+        model_name TEXT,
+        generated_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -88,6 +97,9 @@ SCHEMA_STATEMENTS = (
         evidence_snippet TEXT,
         start_offset_seconds INTEGER,
         end_offset_seconds INTEGER,
+        provider_name TEXT NOT NULL DEFAULT 'heuristic',
+        model_name TEXT,
+        generated_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,

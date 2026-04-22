@@ -19,6 +19,12 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
         "TRANSCRIPTION_DEVICE": "cpu",
         "DIARIZATION_PROVIDER": "librosa-clustering",
         "DIARIZATION_MAX_SPEAKERS": "3",
+        "SUMMARY_PROVIDER": "local_llm",
+        "ACTION_EXTRACTION_PROVIDER": "heuristic",
+        "LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434",
+        "LOCAL_LLM_MODEL": "llama3.1:8b",
+        "LOCAL_LLM_TIMEOUT_SECONDS": "25",
+        "LOCAL_LLM_MAX_TRANSCRIPT_CHARS": "8000",
     }
 
     config = load_config(env=env)
@@ -33,6 +39,12 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
     assert config.transcription_device == "cpu"
     assert config.diarization_provider == "librosa-clustering"
     assert config.diarization_max_speakers == 3
+    assert config.summary_provider == "local_llm"
+    assert config.action_extraction_provider == "heuristic"
+    assert config.local_llm_base_url == "http://127.0.0.1:11434"
+    assert config.local_llm_model == "llama3.1:8b"
+    assert config.local_llm_timeout_seconds == 25
+    assert config.local_llm_max_transcript_chars == 8000
     assert config.database_path == local_tmp_dir / "data" / "app.db"
     assert config.audio_output_dir.exists()
     assert config.log_dir.exists()

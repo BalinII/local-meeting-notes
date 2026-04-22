@@ -13,6 +13,7 @@ This package contains:
 - local diarization
 - local summary generation
 - local action and decision extraction
+- local LLM-backed summary and extraction providers
 
 ## Windows Loopback Notes
 
@@ -81,3 +82,19 @@ This package contains:
   - `python -m local_meeting_notes.app summary show --capture-id <capture-id>`
   - `python -m local_meeting_notes.app actions extract --capture-id <capture-id>`
   - `python -m local_meeting_notes.app actions list --capture-id <capture-id>`
+
+## Local LLM Notes
+
+- Phase 6C adds a `local_llm` provider mode alongside the existing `heuristic` mode.
+- The first implementation targets Ollama's local HTTP API.
+- Prompts require JSON-only output and explicitly forbid unsupported claims.
+- Model output is validated and normalized before persistence.
+- If the local runtime fails, times out, or returns invalid JSON, the service falls back to the heuristic provider.
+- Summary, action, decision, and follow-up rows now store:
+  - `provider_name`
+  - `model_name`
+  - `generated_at`
+- CLI additions:
+  - `python -m local_meeting_notes.app llm check`
+  - `python -m local_meeting_notes.app summary generate --capture-id <capture-id> --provider local_llm`
+  - `python -m local_meeting_notes.app actions extract --capture-id <capture-id> --provider local_llm`

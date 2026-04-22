@@ -22,6 +22,12 @@ def _build_config(local_tmp_dir: Path):
             "LOG_DIR": str(local_tmp_dir / "data" / "logs"),
             "SESSION_STATE_PATH": str(local_tmp_dir / "data" / "tmp" / "session.json"),
             "AUDIO_CAPTURE_STATE_PATH": str(local_tmp_dir / "data" / "tmp" / "audio_capture_state.json"),
+            "SUMMARY_PROVIDER": "heuristic",
+            "ACTION_EXTRACTION_PROVIDER": "heuristic",
+            "LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434",
+            "LOCAL_LLM_MODEL": "llama3.1:8b",
+            "LOCAL_LLM_TIMEOUT_SECONDS": "10",
+            "LOCAL_LLM_MAX_TRANSCRIPT_CHARS": "8000",
         }
     )
 
@@ -74,3 +80,5 @@ def test_summary_and_action_services_persist_outputs(local_tmp_dir) -> None:
     assert outputs["actions"][0]["owner_name"] in {"Unknown", "Speaker 1", "Speaker 2", "Unconfirmed speaker"}
     assert outputs["decisions"][0]["evidence_snippet"]
     assert outputs["follow_ups"][0]["follow_up_type"] in {"follow_up", "blocker_risk", "open_question"}
+    assert all(row["provider_name"] == "heuristic" for row in summary_rows)
+    assert all(item["provider_name"] == "heuristic" for item in outputs["actions"])

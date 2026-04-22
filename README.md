@@ -38,6 +38,12 @@ Phase 6 adds local summary and extraction:
 - CLI commands to generate and inspect evidence-backed outputs
 - conservative ownership handling that tolerates imperfect diarization
 
+Phase 6C adds a local LLM provider option:
+- Ollama-first local LLM support for summaries and extraction
+- strict JSON output with validation and normalization
+- clean heuristic fallback on invalid output, timeout, or runtime failure
+- configurable provider selection from config or CLI
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -162,10 +168,13 @@ python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
 python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
+python -m local_meeting_notes.app llm check
 python -m local_meeting_notes.app summary generate --capture-id "<capture-id>"
 python -m local_meeting_notes.app summary show --capture-id "<capture-id>"
 python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
 python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
+python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
+python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
 ```
 
 ### Windows Audio Libraries
@@ -204,6 +213,34 @@ These services are intentionally conservative:
 - they use generic ownership such as `Speaker 1`, `Unknown`, or `Unconfirmed speaker`
 - they are designed to tolerate imperfect diarization rather than assuming speaker labels are always right
 
+### Local LLM Runtime
+
+Phase 6C adds a second provider mode alongside the heuristic pipeline:
+- `heuristic`
+- `local_llm`
+
+The first local LLM runtime is Ollama over its local HTTP API. The implementation uses JSON-only prompting, validates model output before persistence, and falls back to the heuristic provider if the local runtime fails or returns invalid structured output.
+
+### Ollama Setup
+
+Install and run Ollama locally, then pull a practical instruct-capable model:
+
+```powershell
+ollama serve
+ollama pull llama3.1:8b
+```
+
+Recommended config in `.env`:
+
+```dotenv
+SUMMARY_PROVIDER=local_llm
+ACTION_EXTRACTION_PROVIDER=local_llm
+LOCAL_LLM_BASE_URL=http://127.0.0.1:11434
+LOCAL_LLM_MODEL=llama3.1:8b
+LOCAL_LLM_TIMEOUT_SECONDS=45
+LOCAL_LLM_MAX_TRANSCRIPT_CHARS=12000
+```
+
 ### Frontend
 
 ```powershell
@@ -229,8 +266,11 @@ npm run tauri:dev
 - Transcript segments are persisted per chunk in SQLite, including chunk path and failure state.
 - Diarization segments are persisted separately and used to apply best-effort generic speaker labels onto transcript rows.
 - Summaries, actions, decisions, and follow-ups are persisted in SQLite by `capture_id`.
+- Summary and extraction rows also store provider metadata so you can tell whether the heuristic or local LLM path produced them.
 - Summary and extraction outputs include transcript evidence snippets where practical.
 - Ownership may remain `Unknown` or `Unconfirmed speaker` when diarization is weak or missing.
+- `local_llm` currently targets Ollama first, but the client boundary is designed so another local OpenAI-compatible runtime can be swapped in later.
+- If Ollama is unreachable, times out, or returns invalid JSON, the app falls back to the heuristic provider instead of failing the whole pipeline.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.

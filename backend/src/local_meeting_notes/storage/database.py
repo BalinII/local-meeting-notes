@@ -33,6 +33,9 @@ SUMMARY_MIGRATIONS = {
     "capture_id": "ALTER TABLE summaries ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
     "title": "ALTER TABLE summaries ADD COLUMN title TEXT NOT NULL DEFAULT ''",
     "evidence_snippet": "ALTER TABLE summaries ADD COLUMN evidence_snippet TEXT",
+    "provider_name": "ALTER TABLE summaries ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
+    "model_name": "ALTER TABLE summaries ADD COLUMN model_name TEXT",
+    "generated_at": "ALTER TABLE summaries ADD COLUMN generated_at TEXT",
 }
 
 ACTION_MIGRATIONS = {
@@ -40,6 +43,9 @@ ACTION_MIGRATIONS = {
     "evidence_snippet": "ALTER TABLE actions ADD COLUMN evidence_snippet TEXT",
     "start_offset_seconds": "ALTER TABLE actions ADD COLUMN start_offset_seconds INTEGER",
     "end_offset_seconds": "ALTER TABLE actions ADD COLUMN end_offset_seconds INTEGER",
+    "provider_name": "ALTER TABLE actions ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
+    "model_name": "ALTER TABLE actions ADD COLUMN model_name TEXT",
+    "generated_at": "ALTER TABLE actions ADD COLUMN generated_at TEXT",
 }
 
 DECISION_MIGRATIONS = {
@@ -47,6 +53,9 @@ DECISION_MIGRATIONS = {
     "evidence_snippet": "ALTER TABLE decisions ADD COLUMN evidence_snippet TEXT",
     "start_offset_seconds": "ALTER TABLE decisions ADD COLUMN start_offset_seconds INTEGER",
     "end_offset_seconds": "ALTER TABLE decisions ADD COLUMN end_offset_seconds INTEGER",
+    "provider_name": "ALTER TABLE decisions ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
+    "model_name": "ALTER TABLE decisions ADD COLUMN model_name TEXT",
+    "generated_at": "ALTER TABLE decisions ADD COLUMN generated_at TEXT",
 }
 
 FOLLOW_UP_MIGRATIONS = {
@@ -57,6 +66,9 @@ FOLLOW_UP_MIGRATIONS = {
     "evidence_snippet": "ALTER TABLE follow_ups ADD COLUMN evidence_snippet TEXT",
     "start_offset_seconds": "ALTER TABLE follow_ups ADD COLUMN start_offset_seconds INTEGER",
     "end_offset_seconds": "ALTER TABLE follow_ups ADD COLUMN end_offset_seconds INTEGER",
+    "provider_name": "ALTER TABLE follow_ups ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
+    "model_name": "ALTER TABLE follow_ups ADD COLUMN model_name TEXT",
+    "generated_at": "ALTER TABLE follow_ups ADD COLUMN generated_at TEXT",
 }
 
 

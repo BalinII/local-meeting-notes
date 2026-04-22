@@ -80,8 +80,18 @@ def insert_transcript_segment(
 def insert_summary(connection: sqlite3.Connection, summary: SummaryRecord) -> int:
     cursor = connection.execute(
         """
-        INSERT INTO summaries (meeting_id, capture_id, title, content, summary_type, evidence_snippet)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO summaries (
+            meeting_id,
+            capture_id,
+            title,
+            content,
+            summary_type,
+            evidence_snippet,
+            provider_name,
+            model_name,
+            generated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             summary.meeting_id,
@@ -90,6 +100,9 @@ def insert_summary(connection: sqlite3.Connection, summary: SummaryRecord) -> in
             summary.content,
             summary.summary_type,
             summary.evidence_snippet,
+            summary.provider_name,
+            summary.model_name,
+            summary.generated_at,
         ),
     )
     return int(cursor.lastrowid)
@@ -106,9 +119,12 @@ def insert_action(connection: sqlite3.Connection, action: ActionRecord) -> int:
             status,
             evidence_snippet,
             start_offset_seconds,
-            end_offset_seconds
+            end_offset_seconds,
+            provider_name,
+            model_name,
+            generated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             action.meeting_id,
@@ -119,6 +135,9 @@ def insert_action(connection: sqlite3.Connection, action: ActionRecord) -> int:
             action.evidence_snippet,
             action.start_offset_seconds,
             action.end_offset_seconds,
+            action.provider_name,
+            action.model_name,
+            action.generated_at,
         ),
     )
     return int(cursor.lastrowid)
@@ -133,9 +152,12 @@ def insert_decision(connection: sqlite3.Connection, decision: DecisionRecord) ->
             capture_id,
             evidence_snippet,
             start_offset_seconds,
-            end_offset_seconds
+            end_offset_seconds,
+            provider_name,
+            model_name,
+            generated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             decision.meeting_id,
@@ -144,6 +166,9 @@ def insert_decision(connection: sqlite3.Connection, decision: DecisionRecord) ->
             decision.evidence_snippet,
             decision.start_offset_seconds,
             decision.end_offset_seconds,
+            decision.provider_name,
+            decision.model_name,
+            decision.generated_at,
         ),
     )
     return int(cursor.lastrowid)
@@ -161,9 +186,12 @@ def insert_follow_up(connection: sqlite3.Connection, follow_up: FollowUpRecord) 
             status,
             evidence_snippet,
             start_offset_seconds,
-            end_offset_seconds
+            end_offset_seconds,
+            provider_name,
+            model_name,
+            generated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             follow_up.meeting_id,
@@ -175,6 +203,9 @@ def insert_follow_up(connection: sqlite3.Connection, follow_up: FollowUpRecord) 
             follow_up.evidence_snippet,
             follow_up.start_offset_seconds,
             follow_up.end_offset_seconds,
+            follow_up.provider_name,
+            follow_up.model_name,
+            follow_up.generated_at,
         ),
     )
     return int(cursor.lastrowid)

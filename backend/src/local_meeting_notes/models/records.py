@@ -64,6 +64,9 @@ class SummaryRecord:
     content: str
     summary_type: str = "mock"
     evidence_snippet: str | None = None
+    provider_name: str = "heuristic"
+    model_name: str | None = None
+    generated_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -77,6 +80,9 @@ class ActionRecord:
     evidence_snippet: str | None = None
     start_offset_seconds: int | None = None
     end_offset_seconds: int | None = None
+    provider_name: str = "heuristic"
+    model_name: str | None = None
+    generated_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -88,6 +94,9 @@ class DecisionRecord:
     evidence_snippet: str | None = None
     start_offset_seconds: int | None = None
     end_offset_seconds: int | None = None
+    provider_name: str = "heuristic"
+    model_name: str | None = None
+    generated_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -102,3 +111,6 @@ class FollowUpRecord:
     evidence_snippet: str | None = None
     start_offset_seconds: int | None = None
     end_offset_seconds: int | None = None
+    provider_name: str = "heuristic"
+    model_name: str | None = None
+    generated_at: str | None = None
