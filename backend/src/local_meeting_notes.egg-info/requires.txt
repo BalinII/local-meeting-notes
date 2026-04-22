@@ -1,0 +1,7 @@
+numpy>=1.26
+soundcard>=0.4.3
+soundfile>=0.12.1
+
+[dev]
+pytest>=8.0
+ruff>=0.5

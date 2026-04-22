@@ -21,9 +21,30 @@ def _utc_iso() -> str:
 
 
 class AudioCaptureService:
+    startup_timeout_seconds = 8.0
+
     def __init__(self, config: AppConfig, logger: logging.Logger | None = None) -> None:
         self.config = config
         self.logger = logger or logging.getLogger("local_meeting_notes.audio_capture")
+
+    def _get_loopback_microphone(self, soundcard_module):
+        default_speaker = soundcard_module.default_speaker()
+        speaker_id = getattr(default_speaker, "id", None)
+        speaker_name = getattr(default_speaker, "name", "Unknown speaker")
+        self.logger.info(
+            "Resolving loopback capture device for default speaker: %s (%s)",
+            speaker_name,
+            speaker_id or "no-id",
+        )
+
+        if speaker_id:
+            return soundcard_module.get_microphone(speaker_id, include_loopback=True)
+
+        for microphone in soundcard_module.all_microphones(include_loopback=True):
+            if speaker_name in getattr(microphone, "name", ""):
+                return microphone
+
+        raise RuntimeError(f"Could not resolve a loopback microphone for speaker '{speaker_name}'.")
 
     def list_devices(self) -> list[AudioDeviceInfo]:
         soundcard, _ = load_audio_dependencies()
@@ -59,6 +80,32 @@ class AudioCaptureService:
     def get_status(self) -> dict[str, object]:
         return read_capture_state(self.config.audio_capture_state_path) or {"status": "idle"}
 
+    def _wait_for_startup_transition(
+        self, process: subprocess.Popen[bytes], capture_id: str
+    ) -> dict[str, object]:
+        deadline = time.time() + self.startup_timeout_seconds
+
+        while time.time() < deadline:
+            state = self.get_status()
+            if state.get("status") in {"running", "failed", "stopped"}:
+                return state
+            if process.poll() is not None:
+                break
+            time.sleep(0.2)
+
+        state = self.get_status()
+        if state.get("status") == "starting":
+            state["status"] = "failed"
+            state["last_error"] = (
+                f"Audio startup timed out after {self.startup_timeout_seconds:.1f}s "
+                f"for capture {capture_id}. Loopback startup may be blocked by an invalid "
+                "loopback device, unsupported sample rate, or a Windows driver limitation."
+            )
+            state["failed_at"] = _utc_iso()
+            write_capture_state(self.config.audio_capture_state_path, state)
+            self.logger.error(state["last_error"])
+        return state
+
     def start_capture(
         self,
         *,
@@ -76,7 +123,14 @@ class AudioCaptureService:
             raise RuntimeError("At least one capture source must be enabled.")
 
         try:
-            self.list_devices()
+            soundcard, _ = load_audio_dependencies()
+            if include_loopback:
+                loopback_device = self._get_loopback_microphone(soundcard)
+                self.logger.info(
+                    "Selected loopback device: %s (%s)",
+                    getattr(loopback_device, "name", "Unknown loopback"),
+                    getattr(loopback_device, "id", "no-id"),
+                )
         except AudioDependencyError:
             raise
 
@@ -143,7 +197,7 @@ class AudioCaptureService:
             include_loopback,
             include_microphone,
         )
-        return payload
+        return self._wait_for_startup_transition(process, capture_id)
 
     def stop_capture(self, timeout_seconds: float = 10.0) -> dict[str, object]:
         state = read_capture_state(self.config.audio_capture_state_path)
@@ -175,4 +229,6 @@ class AudioCaptureService:
             "message",
             "Windows loopback capture is practical but fragile across devices and sample rates.",
         )
+        if state.get("status") == "failed" and state.get("last_error"):
+            state["message"] = f"{state['message']} Failure: {state['last_error']}"
         return state

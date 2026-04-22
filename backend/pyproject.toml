@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "local-meeting-notes"
 version = "0.1.0"
 description = "Windows-first local meeting notes desktop backend scaffold."
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "numpy>=1.26",

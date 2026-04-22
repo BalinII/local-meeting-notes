@@ -1,0 +1,2 @@
+[console_scripts]
+local-meeting-notes = local_meeting_notes.app:main
