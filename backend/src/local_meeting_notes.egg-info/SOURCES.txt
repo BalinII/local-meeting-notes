@@ -46,6 +46,7 @@ src/local_meeting_notes/storage/session_state.py
 src/local_meeting_notes/summarizer/__init__.py
 src/local_meeting_notes/summarizer/service.py
 src/local_meeting_notes/transcription_engine/__init__.py
+src/local_meeting_notes/transcription_engine/providers.py
 src/local_meeting_notes/transcription_engine/service.py
 src/local_meeting_notes/utils/__init__.py
 src/local_meeting_notes/utils/placeholders.py
