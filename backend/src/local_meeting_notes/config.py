@@ -19,6 +19,8 @@ class AppConfig:
     transcription_provider: str
     transcription_model_size: str
     transcription_device: str
+    diarization_provider: str
+    diarization_max_speakers: int
     data_dir: Path
     audio_output_dir: Path
     database_path: Path
@@ -85,6 +87,8 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         transcription_provider=source.get("TRANSCRIPTION_PROVIDER", "faster-whisper"),
         transcription_model_size=source.get("TRANSCRIPTION_MODEL_SIZE", "tiny"),
         transcription_device=source.get("TRANSCRIPTION_DEVICE", "cpu"),
+        diarization_provider=source.get("DIARIZATION_PROVIDER", "librosa-clustering"),
+        diarization_max_speakers=int(source.get("DIARIZATION_MAX_SPEAKERS", "3")),
         data_dir=data_dir,
         audio_output_dir=audio_output_dir,
         database_path=database_path,

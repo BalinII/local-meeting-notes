@@ -39,8 +39,6 @@ Notes:
 - `audio stop` is cooperative, so it may finish the current chunk before exiting.
 - If loopback capture fails, try `--no-loopback` first to verify microphone capture independently.
 
-## 5. Run the desktop shell
-
 ## 5. Run local transcription
 
 ```powershell
@@ -54,7 +52,21 @@ Notes:
 - `faster-whisper` runs locally and may download model files on first use.
 - Chunk failures are persisted in SQLite so you can inspect partial results.
 
-## 6. Run the desktop shell
+## 6. Run local diarization
+
+```powershell
+python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
+python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
+```
+
+Notes:
+- Diarization is batch/offline and uses generic speaker labels only.
+- Transcript-to-speaker alignment is best-effort by timing overlap.
+- Imperfect alignment is expected on noisy audio and overlapping speech.
+
+## 7. Run the desktop shell
 
 ```powershell
 npm run tauri:dev
@@ -64,5 +76,5 @@ npm run tauri:dev
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.
-- The current backend has real local chunk transcription but no diarization yet.
+- The current backend has real local chunk transcription and generic speaker diarization, but no participant identity mapping yet.
 - Windows loopback capture is practical but fragile on some drivers and devices.

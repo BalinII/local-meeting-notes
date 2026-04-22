@@ -65,4 +65,20 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS diarization_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL,
+        capture_id TEXT NOT NULL DEFAULT '',
+        source_audio_path TEXT NOT NULL DEFAULT '',
+        diarization_status TEXT NOT NULL DEFAULT 'pending',
+        speaker_label TEXT NOT NULL,
+        start_offset_seconds INTEGER NOT NULL,
+        end_offset_seconds INTEGER NOT NULL,
+        provider_name TEXT NOT NULL DEFAULT 'mock',
+        confidence REAL,
+        error_message TEXT,
+        FOREIGN KEY (meeting_id) REFERENCES meetings (id)
+    )
+    """,
 )

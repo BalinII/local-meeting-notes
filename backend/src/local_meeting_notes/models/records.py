@@ -41,6 +41,21 @@ class TranscriptSegmentRecord:
 
 
 @dataclass(slots=True)
+class DiarizationSegmentRecord:
+    id: int | None
+    meeting_id: int
+    capture_id: str
+    source_audio_path: str
+    diarization_status: str
+    speaker_label: str
+    start_offset_seconds: int
+    end_offset_seconds: int
+    provider_name: str = "mock"
+    confidence: float | None = None
+    error_message: str | None = None
+
+
+@dataclass(slots=True)
 class SummaryRecord:
     id: int | None
     meeting_id: int

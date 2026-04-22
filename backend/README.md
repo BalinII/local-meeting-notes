@@ -10,7 +10,7 @@ This package contains:
 - CLI entrypoints
 - audio capture services
 - local chunk transcription
-- future diarization pipelines
+- local diarization
 
 ## Windows Loopback Notes
 
@@ -35,3 +35,22 @@ This package contains:
   - `python -m local_meeting_notes.app transcript transcribe --capture-id <capture-id>`
   - `python -m local_meeting_notes.app transcript status --capture-id <capture-id>`
   - `python -m local_meeting_notes.app transcript list --capture-id <capture-id>`
+
+## Local Diarization Notes
+
+- Phase 5 uses a swappable diarization provider boundary.
+- The default MVP provider uses `librosa` features plus `scikit-learn` clustering for offline generic speaker-turn segmentation.
+- Diarization segments are stored in SQLite with:
+  - `capture_id`
+  - `source_audio_path`
+  - `diarization_status`
+  - `speaker_label`
+  - offsets
+  - provider metadata
+  - confidence when available
+  - failure details
+- Transcript speaker labels are updated by best-effort timing overlap with diarization segments.
+- CLI commands:
+  - `python -m local_meeting_notes.app diarize run --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app diarize status --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app diarize list --capture-id <capture-id>`

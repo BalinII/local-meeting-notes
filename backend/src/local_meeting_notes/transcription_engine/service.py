@@ -161,6 +161,7 @@ class TranscriptionEngineService:
         return [
             {
                 "capture_id": row["capture_id"],
+                "speaker_label": row["speaker_label"],
                 "source_chunk_path": row["source_chunk_path"],
                 "transcription_status": row["transcription_status"],
                 "start_offset_seconds": row["start_offset_seconds"],

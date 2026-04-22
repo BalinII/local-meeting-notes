@@ -24,7 +24,7 @@ def build_service_registry(config: AppConfig, logger: logging.Logger | None = No
         "meeting_detector": MeetingDetectorService(config),
         "audio_capture": AudioCaptureService(config, logger=logger),
         "transcription_engine": TranscriptionEngineService(config, logger=logger),
-        "diarization_engine": DiarizationEngineService(config),
+        "diarization_engine": DiarizationEngineService(config, logger=logger),
         "speaker_attribution": SpeakerAttributionService(config),
         "summarizer": SummarizerService(config),
         "action_extractor": ActionExtractorService(config),

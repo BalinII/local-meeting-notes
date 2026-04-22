@@ -20,6 +20,15 @@ TRANSCRIPT_SEGMENT_MIGRATIONS = {
     "error_message": "ALTER TABLE transcript_segments ADD COLUMN error_message TEXT",
 }
 
+DIARIZATION_SEGMENT_MIGRATIONS = {
+    "capture_id": "ALTER TABLE diarization_segments ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "source_audio_path": "ALTER TABLE diarization_segments ADD COLUMN source_audio_path TEXT NOT NULL DEFAULT ''",
+    "diarization_status": "ALTER TABLE diarization_segments ADD COLUMN diarization_status TEXT NOT NULL DEFAULT 'pending'",
+    "provider_name": "ALTER TABLE diarization_segments ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'mock'",
+    "confidence": "ALTER TABLE diarization_segments ADD COLUMN confidence REAL",
+    "error_message": "ALTER TABLE diarization_segments ADD COLUMN error_message TEXT",
+}
+
 
 def create_connection(database_path: Path) -> sqlite3.Connection:
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,12 +60,20 @@ def _apply_schema_migrations(connection: sqlite3.Connection) -> None:
         row["name"]
         for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     }
-    if "transcript_segments" not in table_names:
-        return
-
-    existing_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(transcript_segments)").fetchall()
-    }
+    transcript_columns = set()
+    if "transcript_segments" in table_names:
+        transcript_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(transcript_segments)").fetchall()
+        }
     for column_name, statement in TRANSCRIPT_SEGMENT_MIGRATIONS.items():
-        if column_name not in existing_columns:
+        if column_name not in transcript_columns:
+            connection.execute(statement)
+
+    diarization_columns = set()
+    if "diarization_segments" in table_names:
+        diarization_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(diarization_segments)").fetchall()
+        }
+    for column_name, statement in DIARIZATION_SEGMENT_MIGRATIONS.items():
+        if column_name not in diarization_columns:
             connection.execute(statement)

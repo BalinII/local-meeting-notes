@@ -17,6 +17,8 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
         "TRANSCRIPTION_PROVIDER": "faster-whisper",
         "TRANSCRIPTION_MODEL_SIZE": "tiny",
         "TRANSCRIPTION_DEVICE": "cpu",
+        "DIARIZATION_PROVIDER": "librosa-clustering",
+        "DIARIZATION_MAX_SPEAKERS": "3",
     }
 
     config = load_config(env=env)
@@ -29,6 +31,8 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
     assert config.transcription_provider == "faster-whisper"
     assert config.transcription_model_size == "tiny"
     assert config.transcription_device == "cpu"
+    assert config.diarization_provider == "librosa-clustering"
+    assert config.diarization_max_speakers == 3
     assert config.database_path == local_tmp_dir / "data" / "app.db"
     assert config.audio_output_dir.exists()
     assert config.log_dir.exists()

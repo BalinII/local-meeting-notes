@@ -10,6 +10,7 @@ from .bootstrap import bootstrap_application
 from .audio_capture.dependencies import AudioDependencyError
 from .audio_capture.worker import run_capture_worker
 from .audio_capture.service import AudioCaptureService
+from .diarization_engine.service import DiarizationEngineService
 from .models import ActionRecord, DecisionRecord, SummaryRecord
 from .storage.database import connection_context
 from .storage.mock_seed import build_mock_records, build_mock_session
@@ -80,6 +81,22 @@ def build_parser() -> argparse.ArgumentParser:
         "list", help="List transcript segments for a capture."
     )
     transcript_list.add_argument("--capture-id", required=True)
+
+    diarize_parser = subparsers.add_parser("diarize", help="Local diarization commands.")
+    diarize_subparsers = diarize_parser.add_subparsers(dest="diarize_command", required=True)
+
+    diarize_run = diarize_subparsers.add_parser("run", help="Batch diarize a capture by capture id.")
+    diarize_run.add_argument("--capture-id", required=True)
+
+    diarize_status = diarize_subparsers.add_parser(
+        "status", help="Show diarization status for a capture."
+    )
+    diarize_status.add_argument("--capture-id", required=True)
+
+    diarize_list = diarize_subparsers.add_parser(
+        "list", help="List diarization segments for a capture."
+    )
+    diarize_list.add_argument("--capture-id", required=True)
 
     return parser
 
@@ -281,11 +298,67 @@ def run_transcript_list(capture_id: str) -> int:
     for segment in segments:
         print(
             f"[{segment['transcription_status']}] "
+            f"{segment['speaker_label']} "
             f"{segment['start_offset_seconds']}-{segment['end_offset_seconds']}s "
             f"{segment['source_chunk_path']}"
         )
         if segment["content"]:
             print(segment["content"])
+        if segment["error_message"]:
+            print(f"Error: {segment['error_message']}")
+    return 0
+
+
+def _get_diarization_service() -> DiarizationEngineService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["diarization_engine"]
+    assert isinstance(service, DiarizationEngineService)
+    return service
+
+
+def run_diarize_run(capture_id: str) -> int:
+    service = _get_diarization_service()
+    try:
+        result = service.diarize_capture(capture_id)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
+
+    print(f"Capture: {result['capture_id']}")
+    print(f"Total audio files: {result['total_audio_files']}")
+    print(f"Completed audio files: {result['completed_audio_files']}")
+    print(f"Failed audio files: {result['failed_audio_files']}")
+    return 0
+
+
+def run_diarize_status(capture_id: str) -> int:
+    service = _get_diarization_service()
+    status = service.get_status(capture_id)
+    print(f"Capture: {status['capture_id']}")
+    print(f"Status: {status['status']}")
+    print(f"Total segments: {status['total_segments']}")
+    print(f"Completed segments: {status['completed_segments']}")
+    print(f"Failed segments: {status['failed_segments']}")
+    print(f"Pending segments: {status['pending_segments']}")
+    return 0
+
+
+def run_diarize_list(capture_id: str) -> int:
+    service = _get_diarization_service()
+    segments = service.list_segments(capture_id)
+    if not segments:
+        print(f"No diarization segments found for capture: {capture_id}")
+        return 0
+
+    for segment in segments:
+        print(
+            f"[{segment['diarization_status']}] "
+            f"{segment['speaker_label']} "
+            f"{segment['start_offset_seconds']}-{segment['end_offset_seconds']}s "
+            f"{segment['source_audio_path']}"
+        )
+        if segment["confidence"] is not None:
+            print(f"Confidence: {segment['confidence']}")
         if segment["error_message"]:
             print(f"Error: {segment['error_message']}")
     return 0
@@ -325,6 +398,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_transcript_status(args.capture_id)
     if args.command == "transcript" and args.transcript_command == "list":
         return run_transcript_list(args.capture_id)
+    if args.command == "diarize" and args.diarize_command == "run":
+        return run_diarize_run(args.capture_id)
+    if args.command == "diarize" and args.diarize_command == "status":
+        return run_diarize_status(args.capture_id)
+    if args.command == "diarize" and args.diarize_command == "list":
+        return run_diarize_list(args.capture_id)
 
     parser.error("Unsupported command.")
     return 2

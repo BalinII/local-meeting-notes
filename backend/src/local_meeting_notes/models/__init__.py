@@ -2,6 +2,7 @@
 
 from .records import (
     ActionRecord,
+    DiarizationSegmentRecord,
     DecisionRecord,
     MeetingRecord,
     ParticipantRecord,
@@ -12,6 +13,7 @@ from .session import MeetingSession
 
 __all__ = [
     "ActionRecord",
+    "DiarizationSegmentRecord",
     "DecisionRecord",
     "MeetingRecord",
     "MeetingSession",

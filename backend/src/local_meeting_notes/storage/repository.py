@@ -6,6 +6,7 @@ import sqlite3
 
 from ..models import (
     ActionRecord,
+    DiarizationSegmentRecord,
     DecisionRecord,
     MeetingRecord,
     ParticipantRecord,
@@ -169,3 +170,94 @@ def fetch_transcription_status(connection: sqlite3.Connection, capture_id: str) 
         """,
         (capture_id,),
     ).fetchone()
+
+
+def insert_diarization_segment(
+    connection: sqlite3.Connection, segment: DiarizationSegmentRecord
+) -> int:
+    cursor = connection.execute(
+        """
+        INSERT INTO diarization_segments (
+            meeting_id,
+            capture_id,
+            source_audio_path,
+            diarization_status,
+            speaker_label,
+            start_offset_seconds,
+            end_offset_seconds,
+            provider_name,
+            confidence,
+            error_message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            segment.meeting_id,
+            segment.capture_id,
+            segment.source_audio_path,
+            segment.diarization_status,
+            segment.speaker_label,
+            segment.start_offset_seconds,
+            segment.end_offset_seconds,
+            segment.provider_name,
+            segment.confidence,
+            segment.error_message,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def delete_diarization_segments_for_capture(connection: sqlite3.Connection, capture_id: str) -> None:
+    connection.execute("DELETE FROM diarization_segments WHERE capture_id = ?", (capture_id,))
+
+
+def fetch_diarization_segments_for_capture(
+    connection: sqlite3.Connection, capture_id: str
+) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM diarization_segments
+        WHERE capture_id = ?
+        ORDER BY start_offset_seconds, id
+        """,
+        (capture_id,),
+    ).fetchall()
+
+
+def fetch_diarization_status(connection: sqlite3.Connection, capture_id: str) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT
+            capture_id,
+            COUNT(*) AS total_segments,
+            SUM(CASE WHEN diarization_status = 'completed' THEN 1 ELSE 0 END) AS completed_segments,
+            SUM(CASE WHEN diarization_status = 'failed' THEN 1 ELSE 0 END) AS failed_segments,
+            SUM(CASE WHEN diarization_status = 'pending' THEN 1 ELSE 0 END) AS pending_segments
+        FROM diarization_segments
+        WHERE capture_id = ?
+        GROUP BY capture_id
+        """,
+        (capture_id,),
+    ).fetchone()
+
+
+def apply_speaker_labels_to_transcript_segments(
+    connection: sqlite3.Connection, capture_id: str
+) -> None:
+    transcript_rows = fetch_transcript_segments_for_capture(connection, capture_id)
+    diarization_rows = fetch_diarization_segments_for_capture(connection, capture_id)
+    for transcript in transcript_rows:
+        best_label = "Unknown"
+        best_overlap = 0
+        for diarization in diarization_rows:
+            overlap = min(
+                transcript["end_offset_seconds"], diarization["end_offset_seconds"]
+            ) - max(transcript["start_offset_seconds"], diarization["start_offset_seconds"])
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_label = diarization["speaker_label"]
+        connection.execute(
+            "UPDATE transcript_segments SET speaker_label = ? WHERE id = ?",
+            (best_label, transcript["id"]),
+        )

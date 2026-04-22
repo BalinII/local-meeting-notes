@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "faster-whisper>=1.0.3",
+  "librosa>=0.10.2",
   "numpy>=1.26",
+  "scikit-learn>=1.5",
   "soundcard>=0.4.3",
   "soundfile>=0.12.1",
 ]

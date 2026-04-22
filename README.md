@@ -27,7 +27,12 @@ Phase 4 adds the first local transcription pipeline:
 - SQLite persistence of transcript chunk metadata and text
 - CLI commands to transcribe a capture and inspect transcript segments
 
-No diarization, speaker attribution, Microsoft auth, or Teams bot logic is implemented.
+Phase 5 adds offline diarization:
+- batch speaker-turn segmentation for captured audio
+- SQLite persistence of diarization segments
+- generic speaker-labelled transcript inspection
+
+No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
 
@@ -148,6 +153,9 @@ python -m local_meeting_notes.app audio stop
 python -m local_meeting_notes.app transcript transcribe --capture-id "<capture-id>"
 python -m local_meeting_notes.app transcript status --capture-id "<capture-id>"
 python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
 ```
 
 ### Windows Audio Libraries
@@ -166,6 +174,14 @@ The MVP transcription path uses:
 - `soundfile`: chunk duration inspection and audio metadata access
 
 The provider is wrapped so we can swap transcription backends later without rewriting the CLI or persistence layer.
+
+### Local Diarization Libraries
+
+The MVP diarization path uses:
+- `librosa`: local waveform loading and feature extraction
+- `scikit-learn`: offline clustering for generic speaker grouping
+
+This is a practical offline MVP, not a claim of perfect speaker identity. The output is limited to generic labels like `Speaker 1`, `Speaker 2`, and `Speaker 3`.
 
 ### Frontend
 
@@ -190,6 +206,7 @@ npm run tauri:dev
 - Mock transcript segments are used for the CLI-backed demo flow.
 - Audio capture writes timestamped local chunks into `backend/data/audio/<capture-id>/`.
 - Transcript segments are persisted per chunk in SQLite, including chunk path and failure state.
+- Diarization segments are persisted separately and used to apply best-effort generic speaker labels onto transcript rows.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.
