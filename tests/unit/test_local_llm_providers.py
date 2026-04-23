@@ -6,6 +6,10 @@ from pathlib import Path
 from local_meeting_notes.action_extractor.service import ActionExtractorService
 from local_meeting_notes.config import load_config
 from local_meeting_notes.local_llm import LocalLlmClientError
+from local_meeting_notes.local_llm.transcript_cleaning import (
+    clean_transcript_segments,
+    format_clean_transcript_context,
+)
 from local_meeting_notes.summarizer.service import SummarizerService
 from local_meeting_notes.transcription_engine.providers import TranscriptionResult
 from local_meeting_notes.transcription_engine.service import TranscriptionEngineService
@@ -90,7 +94,7 @@ def test_local_llm_summary_and_extraction_persist_metadata(local_tmp_dir) -> Non
                 {
                     "title": "Detailed Summary",
                     "summary_type": "detailed",
-                    "content": "The meeting focused on a local-first release plan and follow-up validation work.",
+                    "content": "Speaker 1 will prepare the rollout checklist.",
                     "evidence_snippet": "Action item: Speaker 1 will prepare the rollout checklist.",
                 },
             ]
@@ -174,3 +178,127 @@ def test_local_llm_timeout_falls_back_to_heuristic_for_actions(local_tmp_dir) ->
 
     assert result["provider_name"] == "heuristic"
     assert outputs["actions"][0]["provider_name"] == "heuristic"
+
+
+def test_transcript_cleaning_suppresses_asr_noise() -> None:
+    segments = [
+        {
+            "speaker_label": "Unknown",
+            "content": "um um um yeah yeah [inaudible] background noise",
+            "start_offset_seconds": 0,
+            "end_offset_seconds": 1,
+        },
+        {
+            "speaker_label": "Speaker 1",
+            "content": "Action item action item: please prepare the release checklist checklist.",
+            "start_offset_seconds": 2,
+            "end_offset_seconds": 8,
+        },
+        {
+            "speaker_label": "Speaker 1",
+            "content": "Action item action item: please prepare the release checklist checklist.",
+            "start_offset_seconds": 9,
+            "end_offset_seconds": 12,
+        },
+    ]
+
+    cleaned = clean_transcript_segments(segments)
+    context = format_clean_transcript_context(segments, max_chars=1000)
+
+    assert len(cleaned) == 1
+    assert "um um" not in context
+    assert "background noise" not in context
+    assert "checklist checklist" not in context
+    assert "please prepare the release checklist" in context
+
+
+def test_local_llm_prompt_uses_cleaned_transcript_context(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_transcript(config)
+
+    class CapturingSummaryClient:
+        prompt = ""
+
+        def generate_json(self, prompt: str) -> dict[str, object]:
+            self.prompt = prompt
+            return {
+                "summaries": [
+                    {
+                        "title": "Executive Summary",
+                        "summary_type": "executive",
+                        "content": "The team agreed to keep the release local-first.",
+                        "evidence_snippet": "Decision: we will keep the release local-first.",
+                    },
+                    {
+                        "title": "Detailed Summary",
+                        "summary_type": "detailed",
+                        "content": "The team agreed to keep the release local-first and prepare validation follow-up work.",
+                        "evidence_snippet": "Action item: Speaker 1 will prepare the rollout checklist.",
+                    },
+                ]
+            }
+
+    client = CapturingSummaryClient()
+    summaries = SummarizerService(config, llm_client=client)
+    summaries.generate_summaries("capture-llm", provider_name="local_llm")
+
+    assert "Ignore garbled or weakly supported items" in client.prompt
+    assert "Return JSON only." in client.prompt
+
+
+def test_malformed_decision_output_is_suppressed(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_transcript(config)
+
+    client = FakeLlmClient(
+        {
+            "actions": [],
+            "decisions": [
+                {
+                    "description": "Approve the enterprise migration.",
+                    "evidence_snippet": "garbled migration maybe maybe inaudible",
+                    "start_offset_seconds": 0,
+                    "end_offset_seconds": 1,
+                }
+            ],
+            "follow_ups": [],
+        }
+    )
+
+    extractor = ActionExtractorService(config, llm_client=client)
+    result = extractor.extract_capture("capture-llm", provider_name="local_llm")
+    outputs = extractor.list_outputs("capture-llm")
+
+    assert result["decisions"] == 0
+    assert outputs["decisions"] == []
+
+
+def test_weak_local_llm_summary_output_falls_back_to_heuristic(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_transcript(config)
+
+    client = FakeLlmClient(
+        {
+            "summaries": [
+                {
+                    "title": "Executive Summary",
+                    "summary_type": "executive",
+                    "content": "Approve the enterprise migration.",
+                    "evidence_snippet": "Decision: we will keep the release local-first.",
+                },
+                {
+                    "title": "Detailed Summary",
+                    "summary_type": "detailed",
+                    "content": "Approve the enterprise migration and cloud deployment.",
+                    "evidence_snippet": "Action item: Speaker 1 will prepare the rollout checklist.",
+                },
+            ]
+        }
+    )
+
+    summaries = SummarizerService(config, llm_client=client)
+    result = summaries.generate_summaries("capture-llm", provider_name="local_llm")
+    rows = summaries.list_summaries("capture-llm")
+
+    assert result["provider_name"] == "heuristic"
+    assert all(row["provider_name"] == "heuristic" for row in rows)

@@ -8,6 +8,14 @@ from datetime import UTC, datetime
 
 from ..config import AppConfig
 from ..local_llm import LocalLlmClientError, build_local_llm_client
+from ..local_llm.transcript_cleaning import (
+    clean_transcript_text,
+    evidence_supports_output,
+    format_clean_transcript_context,
+    is_outcome_candidate,
+    is_useful_transcript_text,
+    normalize_meeting_note_sentence,
+)
 
 
 def _now_timestamp() -> str:
@@ -15,7 +23,7 @@ def _now_timestamp() -> str:
 
 
 def _normalize_text(value: object, *, default: str = "") -> str:
-    text = str(value or "").strip()
+    text = clean_transcript_text(value)
     return text or default
 
 
@@ -33,28 +41,8 @@ def _normalize_int(value: object, *, default: int = 0) -> int:
 
 
 def _normalize_evidence(value: object) -> str:
-    text = _normalize_text(value)
+    text = clean_transcript_text(value)
     return text[:220] if text else ""
-
-
-def _format_transcript_context(
-    transcript_segments: list[dict[str, object]], *, max_chars: int
-) -> str:
-    lines: list[str] = []
-    total = 0
-    for segment in transcript_segments:
-        content = _normalize_text(segment.get("content"))
-        if not content:
-            continue
-        speaker = _normalize_text(segment.get("speaker_label"), default="Unknown")
-        start = int(segment.get("start_offset_seconds", 0))
-        end = int(segment.get("end_offset_seconds", start))
-        line = f"[{start}-{end}s] {speaker}: {content}"
-        if total + len(line) + 1 > max_chars:
-            break
-        lines.append(line)
-        total += len(line) + 1
-    return "\n".join(lines)
 
 
 @dataclass(slots=True)
@@ -195,11 +183,13 @@ class LocalLlmActionExtractionProvider:
         if not transcript_segments:
             return [], [], []
 
-        prompt = self._build_prompt(
-            _format_transcript_context(
-                transcript_segments, max_chars=self.config.local_llm_max_transcript_chars
-            )
+        transcript_context = format_clean_transcript_context(
+            transcript_segments, max_chars=self.config.local_llm_max_transcript_chars
         )
+        if not transcript_context:
+            return self.fallback_provider.extract(transcript_segments)
+
+        prompt = self._build_prompt(transcript_context)
         try:
             payload = self.client.generate_json(prompt)
             return self._normalize_payload(payload)
@@ -215,14 +205,19 @@ Rules:
 - Use only transcript-supported evidence.
 - Do not invent facts, owners, or decisions.
 - If ownership is unclear, use "Unknown" or "Unconfirmed speaker".
-- If an action or decision is weakly supported, omit it.
+- The transcript may contain ASR noise, filler words, repeated phrases, and malformed fragments.
+- Drop garbled, filler-heavy, incomplete, or weakly supported items.
+- Do not convert malformed fragments into polished decisions.
+- If an action, decision, risk, blocker, or question is weakly supported, omit it.
+- Preserve the meaning of the transcript evidence. Do not broaden or redirect it.
+- Write clean internal-note language, but keep uncertainty explicit.
 - Return JSON only.
 
 Output schema:
 {{
   "actions": [
     {{
-      "description": "clear action",
+      "description": "clear action in polished meeting-note language",
       "owner_name": "Speaker 1",
       "evidence_snippet": "supporting transcript text",
       "start_offset_seconds": 0,
@@ -231,7 +226,7 @@ Output schema:
   ],
   "decisions": [
     {{
-      "description": "clear decision",
+      "description": "clear decision in polished meeting-note language",
       "evidence_snippet": "supporting transcript text",
       "start_offset_seconds": 0,
       "end_offset_seconds": 8
@@ -239,7 +234,7 @@ Output schema:
   ],
   "follow_ups": [
     {{
-      "description": "open issue or follow-up",
+      "description": "open issue or follow-up in polished meeting-note language",
       "follow_up_type": "follow_up",
       "owner_name": "Unconfirmed speaker",
       "evidence_snippet": "supporting transcript text",
@@ -278,9 +273,9 @@ Transcript:
         for raw in raw_items:
             if not isinstance(raw, dict):
                 raise ValueError("Local LLM action items must be objects.")
-            description = _normalize_text(raw.get("description"))
+            description = normalize_meeting_note_sentence(raw.get("description"))
             evidence = _normalize_evidence(raw.get("evidence_snippet"))
-            if not description or not evidence:
+            if not self._is_valid_outcome(description, evidence):
                 continue
             start = _normalize_int(raw.get("start_offset_seconds"))
             end = _normalize_int(raw.get("end_offset_seconds"), default=start)
@@ -309,9 +304,9 @@ Transcript:
         for raw in raw_items:
             if not isinstance(raw, dict):
                 raise ValueError("Local LLM decision items must be objects.")
-            description = _normalize_text(raw.get("description"))
+            description = normalize_meeting_note_sentence(raw.get("description"))
             evidence = _normalize_evidence(raw.get("evidence_snippet"))
-            if not description or not evidence:
+            if not self._is_valid_outcome(description, evidence):
                 continue
             start = _normalize_int(raw.get("start_offset_seconds"))
             end = _normalize_int(raw.get("end_offset_seconds"), default=start)
@@ -339,12 +334,12 @@ Transcript:
         for raw in raw_items:
             if not isinstance(raw, dict):
                 raise ValueError("Local LLM follow-up items must be objects.")
-            description = _normalize_text(raw.get("description"))
+            description = normalize_meeting_note_sentence(raw.get("description"))
             evidence = _normalize_evidence(raw.get("evidence_snippet"))
             follow_up_type = _normalize_text(raw.get("follow_up_type"), default="follow_up")
             if follow_up_type not in {"follow_up", "blocker_risk", "open_question"}:
                 follow_up_type = "follow_up"
-            if not description or not evidence:
+            if not self._is_valid_outcome(description, evidence):
                 continue
             start = _normalize_int(raw.get("start_offset_seconds"))
             end = _normalize_int(raw.get("end_offset_seconds"), default=start)
@@ -362,6 +357,15 @@ Transcript:
                 )
             )
         return items
+
+    def _is_valid_outcome(self, description: str, evidence: str) -> bool:
+        if not description or not evidence:
+            return False
+        if not is_useful_transcript_text(description) or not is_useful_transcript_text(evidence):
+            return False
+        if not is_outcome_candidate(description) and not is_outcome_candidate(evidence):
+            return False
+        return evidence_supports_output(description, evidence)
 
 
 def build_action_extraction_provider(

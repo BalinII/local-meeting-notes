@@ -89,6 +89,8 @@ This package contains:
 - The first implementation targets Ollama's local HTTP API.
 - Prompts require JSON-only output and explicitly forbid unsupported claims.
 - Model output is validated and normalized before persistence.
+- Transcript input is cleaned before prompting to suppress ASR noise, filler-only fragments, repeated words, and common inaudible/noise markers.
+- Output filtering rejects weakly grounded or malformed summaries, decisions, actions, and follow-ups.
 - If the local runtime fails, times out, or returns invalid JSON, the service falls back to the heuristic provider.
 - Summary, action, decision, and follow-up rows now store:
   - `provider_name`
@@ -98,3 +100,8 @@ This package contains:
   - `python -m local_meeting_notes.app llm check`
   - `python -m local_meeting_notes.app summary generate --capture-id <capture-id> --provider local_llm`
   - `python -m local_meeting_notes.app actions extract --capture-id <capture-id> --provider local_llm`
+
+Quality retest flow:
+- Run `summary generate` and `actions extract` with `--provider local_llm` on a real capture.
+- Inspect `summary show` and `actions list`.
+- Confirm garbled ASR fragments are omitted, evidence snippets still point back to transcript text, and uncertain ownership remains generic.

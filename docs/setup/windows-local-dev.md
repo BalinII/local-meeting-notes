@@ -101,6 +101,13 @@ Notes:
 - `local_llm` uses Ollama first and keeps the pipeline local-first.
 - If the runtime is unavailable or returns invalid JSON, the app falls back to the heuristic provider.
 - Keep `LOCAL_LLM_MODEL` configurable because different local machines may need a smaller or faster model.
+- Local LLM prompting now cleans transcript text before generation and filters weakly grounded outputs after generation.
+
+Quality retest checklist:
+- Run the commands above on a real capture that contains ASR noise.
+- Check `summary show` for fewer filler phrases, repeated words, and garbled transcript fragments.
+- Check `actions list` for fewer malformed decisions/actions and evidence snippets that still support each item.
+- Treat remaining `Unknown` or `Unconfirmed speaker` ownership as expected until participant identity mapping exists.
 
 ## 10. Notes
 

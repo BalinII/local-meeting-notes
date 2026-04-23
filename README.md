@@ -44,6 +44,12 @@ Phase 6C adds a local LLM provider option:
 - clean heuristic fallback on invalid output, timeout, or runtime failure
 - configurable provider selection from config or CLI
 
+Phase 6D tunes local LLM output quality:
+- transcript cleaning before prompting to reduce ASR noise
+- stricter prompts that tell the model to omit weak or garbled items
+- post-processing filters that reject poorly grounded summaries and outcomes
+- cleaner meeting-note wording while preserving evidence snippets and timestamps
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -221,6 +227,8 @@ Phase 6C adds a second provider mode alongside the heuristic pipeline:
 
 The first local LLM runtime is Ollama over its local HTTP API. The implementation uses JSON-only prompting, validates model output before persistence, and falls back to the heuristic provider if the local runtime fails or returns invalid structured output.
 
+The local LLM prompt path now cleans transcript input before sending it to the model. It drops obvious filler/noise fragments, collapses repeated words or phrases, removes common `[inaudible]`-style artifacts, and filters malformed fragments. Model outputs are also checked for useful text and evidence overlap before they are persisted.
+
 ### Ollama Setup
 
 Install and run Ollama locally, then pull a practical instruct-capable model:
@@ -271,6 +279,7 @@ npm run tauri:dev
 - Ownership may remain `Unknown` or `Unconfirmed speaker` when diarization is weak or missing.
 - `local_llm` currently targets Ollama first, but the client boundary is designed so another local OpenAI-compatible runtime can be swapped in later.
 - If Ollama is unreachable, times out, or returns invalid JSON, the app falls back to the heuristic provider instead of failing the whole pipeline.
+- If the model output is weak, noisy, or not clearly grounded in evidence, the app omits it or falls back rather than polishing unsupported claims.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.

@@ -8,6 +8,13 @@ from datetime import UTC, datetime
 
 from ..config import AppConfig
 from ..local_llm import LocalLlmClientError, build_local_llm_client
+from ..local_llm.transcript_cleaning import (
+    clean_transcript_text,
+    evidence_supports_output,
+    format_clean_transcript_context,
+    is_useful_transcript_text,
+    normalize_meeting_note_sentence,
+)
 
 
 def _now_timestamp() -> str:
@@ -20,28 +27,8 @@ def _normalize_text(value: object, *, default: str = "") -> str:
 
 
 def _normalize_evidence(value: object) -> str | None:
-    text = _normalize_text(value)
+    text = clean_transcript_text(value)
     return text[:220] if text else None
-
-
-def _format_transcript_context(
-    transcript_segments: list[dict[str, object]], *, max_chars: int
-) -> str:
-    lines: list[str] = []
-    total = 0
-    for segment in transcript_segments:
-        content = _normalize_text(segment.get("content"))
-        if not content:
-            continue
-        speaker = _normalize_text(segment.get("speaker_label"), default="Unknown")
-        start = int(segment.get("start_offset_seconds", 0))
-        end = int(segment.get("end_offset_seconds", start))
-        line = f"[{start}-{end}s] {speaker}: {content}"
-        if total + len(line) + 1 > max_chars:
-            break
-        lines.append(line)
-        total += len(line) + 1
-    return "\n".join(lines)
 
 
 @dataclass(slots=True)
@@ -170,9 +157,11 @@ class LocalLlmSummaryProvider:
         if not transcript_segments:
             return []
 
-        transcript_context = _format_transcript_context(
+        transcript_context = format_clean_transcript_context(
             transcript_segments, max_chars=self.config.local_llm_max_transcript_chars
         )
+        if not transcript_context:
+            raise ValueError("No useful transcript content remained after cleaning.")
         prompt = self._build_prompt(capture_id, transcript_context)
 
         try:
@@ -193,7 +182,11 @@ You are generating grounded meeting summaries for a local-first notes app.
 Rules:
 - Use only facts supported by the transcript.
 - Do not hallucinate decisions, actions, owners, or outcomes.
-- If the transcript is weak, stay conservative.
+- The transcript may contain ASR noise, filler words, repeated phrases, and malformed fragments.
+- Ignore garbled or weakly supported items instead of rewriting them into confident notes.
+- Do not include filler-only fragments, partial phrases, or background-noise artifacts.
+- If the transcript is weak, stay conservative and say less.
+- Keep wording polished but factual. Preserve uncertainty when evidence is unclear.
 - Return JSON only.
 
 Output schema:
@@ -202,14 +195,14 @@ Output schema:
     {{
       "title": "Executive Summary",
       "summary_type": "executive",
-      "content": "short grounded summary",
-      "evidence_snippet": "short quoted or paraphrased evidence"
+      "content": "short grounded summary with no ASR noise",
+      "evidence_snippet": "short evidence from transcript"
     }},
     {{
       "title": "Detailed Summary",
       "summary_type": "detailed",
-      "content": "multi-sentence grounded summary grouped by topic where practical",
-      "evidence_snippet": "short quoted or paraphrased evidence"
+      "content": "grounded summary grouped by topic where practical; omit unclear topics",
+      "evidence_snippet": "short evidence from transcript"
     }}
   ]
 }}
@@ -233,19 +226,22 @@ Transcript:
             summary_type = _normalize_text(item.get("summary_type")).lower()
             if summary_type not in {"executive", "detailed"}:
                 continue
-            content = _normalize_text(item.get("content"))
+            content = normalize_meeting_note_sentence(item.get("content"))
             title = _normalize_text(
                 item.get("title"),
                 default="Executive Summary" if summary_type == "executive" else "Detailed Summary",
             )
-            if not content:
+            evidence = _normalize_evidence(item.get("evidence_snippet"))
+            if not content or not is_useful_transcript_text(content):
                 continue
+            if evidence and not evidence_supports_output(content, evidence):
+                raise ValueError("Local LLM summary content was not grounded in its evidence.")
             drafts.append(
                 SummaryDraft(
                     title=title,
                     summary_type=summary_type,
                     content=content,
-                    evidence_snippet=_normalize_evidence(item.get("evidence_snippet")),
+                    evidence_snippet=evidence,
                     provider_name=self.provider_name,
                     model_name=self.config.local_llm_model,
                     generated_at=generated_at,
