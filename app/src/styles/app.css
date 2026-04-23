@@ -186,9 +186,15 @@ input {
   margin-top: 12px;
 }
 
-.note-card p {
+.note-card p,
+.summary-text p {
   color: #334158;
   line-height: 1.65;
+}
+
+.summary-text p {
+  margin: 12px 0 0;
+  white-space: pre-line;
 }
 
 .card-title-row {
@@ -242,6 +248,7 @@ input {
 .evidence p {
   margin: 8px 0 0;
   color: #5b6678;
+  white-space: pre-line;
 }
 
 .empty-state {

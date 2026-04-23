@@ -124,7 +124,7 @@ function SummaryPanel({ summaries }: { summaries: SummaryOutput[] }) {
               <h3>{summary.title}</h3>
               <ProviderBadge item={summary} />
             </div>
-            <p>{summary.content}</p>
+            <TextBlock text={summary.content} />
             <Evidence text={summary.evidence_snippet} />
           </article>
         ))
@@ -132,6 +132,22 @@ function SummaryPanel({ summaries }: { summaries: SummaryOutput[] }) {
         <p className="muted">No summaries found for this capture.</p>
       )}
     </section>
+  );
+}
+
+function TextBlock({ text }: { text: string }) {
+  const blocks = text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (!blocks.length) return null;
+  return (
+    <div className="summary-text">
+      {blocks.map((block, index) => (
+        <p key={index}>{block}</p>
+      ))}
+    </div>
   );
 }
 

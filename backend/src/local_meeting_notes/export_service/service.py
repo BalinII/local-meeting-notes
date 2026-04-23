@@ -28,11 +28,14 @@ class ExportService:
     def build_review_payload(self, capture_id: str) -> dict[str, Any]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
-            summaries = [dict(row) for row in fetch_summaries_for_capture(connection, capture_id)]
+            raw_summaries = [
+                dict(row) for row in fetch_summaries_for_capture(connection, capture_id)
+            ]
             actions = [dict(row) for row in fetch_actions_for_capture(connection, capture_id)]
             decisions = [dict(row) for row in fetch_decisions_for_capture(connection, capture_id)]
             follow_ups = [dict(row) for row in fetch_follow_ups_for_capture(connection, capture_id)]
 
+        summaries = _consolidate_summaries(raw_summaries)
         blockers_risks = [item for item in follow_ups if item["follow_up_type"] == "blocker_risk"]
         open_questions = [item for item in follow_ups if item["follow_up_type"] == "open_question"]
         other_follow_ups = [item for item in follow_ups if item["follow_up_type"] == "follow_up"]
@@ -40,14 +43,14 @@ class ExportService:
         providers = sorted(
             {
                 str(item["provider_name"])
-                for collection in (summaries, actions, decisions, follow_ups)
+                for collection in (raw_summaries, actions, decisions, follow_ups)
                 for item in collection
                 if item.get("provider_name")
             }
         )
         generated_values = [
             str(item["generated_at"])
-            for collection in (summaries, actions, decisions, follow_ups)
+            for collection in (raw_summaries, actions, decisions, follow_ups)
             for item in collection
             if item.get("generated_at")
         ]
@@ -59,6 +62,7 @@ class ExportService:
                 "providers": providers,
                 "latest_generated_at": max(generated_values) if generated_values else None,
                 "summary_count": len(summaries),
+                "persisted_summary_count": len(raw_summaries),
                 "action_count": len(actions),
                 "decision_count": len(decisions),
                 "follow_up_count": len(follow_ups),
@@ -137,7 +141,7 @@ def render_html(payload: dict[str, Any]) -> str:
     section {{ margin: 28px 0; }}
     article, li {{ margin-bottom: 14px; }}
     .badge {{ display: inline-block; padding: 2px 8px; border-radius: 999px; background: #edf2f7; font-size: 12px; }}
-    .evidence {{ color: #5b6678; font-size: 0.92em; }}
+    .evidence {{ color: #5b6678; font-size: 0.92em; white-space: pre-line; }}
   </style>
 </head>
 <body>
@@ -162,8 +166,98 @@ def _markdown_summaries(summaries: list[dict[str, Any]]) -> list[str]:
             ]
         )
         if summary.get("evidence_snippet"):
-            lines.extend([f"> Evidence: {summary['evidence_snippet']}", ""])
+            evidence_lines = str(summary["evidence_snippet"]).splitlines()
+            lines.append("> Evidence:")
+            lines.extend(f"> {line}" for line in evidence_lines)
+            lines.append("")
     return lines
+
+
+def _consolidate_summaries(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    executive = _summaries_of_type(summaries, "executive")
+    detailed = _summaries_of_type(summaries, "detailed")
+    consolidated = []
+    if executive:
+        consolidated.append(_consolidate_summary_group(executive, "Executive Summary", "executive"))
+    if detailed:
+        consolidated.append(_consolidate_summary_group(detailed, "Detailed Summary", "detailed"))
+    return consolidated
+
+
+def _summaries_of_type(summaries: list[dict[str, Any]], summary_type: str) -> list[dict[str, Any]]:
+    return [
+        summary
+        for summary in summaries
+        if str(summary.get("summary_type", "")).lower() == summary_type
+    ]
+
+
+def _consolidate_summary_group(
+    summaries: list[dict[str, Any]], title: str, summary_type: str
+) -> dict[str, Any]:
+    if len(summaries) == 1:
+        summary = dict(summaries[0])
+        summary["title"] = title
+        summary["summary_type"] = summary_type
+        return summary
+
+    first = summaries[0]
+    return {
+        "id": first.get("id"),
+        "meeting_id": first.get("meeting_id"),
+        "capture_id": first.get("capture_id"),
+        "title": title,
+        "summary_type": summary_type,
+        "content": _join_summary_content(summaries, title),
+        "evidence_snippet": _join_summary_evidence(summaries),
+        "provider_name": _combined_value(summaries, "provider_name"),
+        "model_name": _combined_value(summaries, "model_name"),
+        "generated_at": _latest_value(summaries, "generated_at"),
+    }
+
+
+def _join_summary_content(summaries: list[dict[str, Any]], title: str) -> str:
+    sections = [
+        _strip_duplicate_heading(str(summary.get("content") or ""), title)
+        for summary in summaries
+    ]
+    return "\n\n".join(section for section in sections if section).strip()
+
+
+def _join_summary_evidence(summaries: list[dict[str, Any]]) -> str | None:
+    snippets = [
+        str(summary["evidence_snippet"]).strip()
+        for summary in summaries
+        if summary.get("evidence_snippet")
+    ]
+    if not snippets:
+        return None
+    return "\n".join(f"- {snippet}" for snippet in snippets)
+
+
+def _strip_duplicate_heading(content: str, title: str) -> str:
+    lines = content.strip().splitlines()
+    while lines and _normalized_heading(lines[0]) == _normalized_heading(title):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _normalized_heading(value: str) -> str:
+    return value.strip().strip("#:").strip().casefold()
+
+
+def _combined_value(summaries: list[dict[str, Any]], key: str) -> str | None:
+    values = sorted({str(summary[key]) for summary in summaries if summary.get(key)})
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return "Multiple"
+
+
+def _latest_value(summaries: list[dict[str, Any]], key: str) -> str | None:
+    values = [str(summary[key]) for summary in summaries if summary.get(key)]
+    return max(values) if values else None
 
 
 def _markdown_items(

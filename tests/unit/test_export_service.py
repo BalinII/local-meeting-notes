@@ -51,6 +51,36 @@ def _seed_outputs(config, capture_id: str = "capture-export") -> None:
                 generated_at="2026-04-23T00:00:00+00:00",
             ),
         )
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=capture_id,
+                title="Detailed Summary",
+                summary_type="detailed",
+                content="Detailed Summary\nReview flow should be easy to scan before sharing.",
+                evidence_snippet="The review screen needs a clearer detailed summary.",
+                provider_name="local_llm",
+                model_name="llama3.1:8b",
+                generated_at="2026-04-23T00:01:00+00:00",
+            ),
+        )
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=capture_id,
+                title="Detailed Summary",
+                summary_type="detailed",
+                content="Exports should preserve the same consolidated review structure.",
+                evidence_snippet="Export should match the review payload.",
+                provider_name="local_llm",
+                model_name="llama3.1:8b",
+                generated_at="2026-04-23T00:02:00+00:00",
+            ),
+        )
         insert_action(
             connection,
             ActionRecord(
@@ -121,7 +151,15 @@ def test_export_payload_groups_outputs_for_review(local_tmp_dir) -> None:
 
     assert payload["capture_id"] == "capture-export"
     assert payload["metadata"]["providers"] == ["local_llm"]
+    assert payload["metadata"]["summary_count"] == 2
+    assert payload["metadata"]["persisted_summary_count"] == 3
+    assert len(payload["summaries"]) == 2
     assert payload["summaries"][0]["title"] == "Executive Summary"
+    assert payload["summaries"][1]["title"] == "Detailed Summary"
+    assert "Review flow should be easy to scan" in payload["summaries"][1]["content"]
+    assert "Exports should preserve the same consolidated review structure" in payload["summaries"][1]["content"]
+    assert payload["summaries"][1]["content"].count("Detailed Summary") == 0
+    assert "Export should match the review payload" in payload["summaries"][1]["evidence_snippet"]
     assert payload["actions"][0]["owner_name"] == "Unconfirmed speaker"
     assert payload["blockers_risks"][0]["description"] == "Review extraction quality before sharing notes."
     assert payload["open_questions"][0]["description"] == "Which export format should be shared by default?"
@@ -138,8 +176,10 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
 
     assert "# Meeting Notes: capture-export" in markdown
     assert "## Actions" in markdown
+    assert markdown.count("### Detailed Summary") == 1
     assert "Evidence:" in markdown
     assert "<h1>Meeting Notes: capture-export</h1>" in html
+    assert html.count("<h3>Detailed Summary</h3>") == 1
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
 
