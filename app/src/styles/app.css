@@ -17,7 +17,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -36,13 +37,19 @@ button:disabled {
   opacity: 0.65;
 }
 
-input {
+input,
+textarea {
   min-width: min(420px, 100%);
   border: 1px solid rgba(23, 32, 51, 0.16);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.86);
   color: #172033;
   padding: 12px 14px;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 #root {
@@ -181,6 +188,10 @@ input {
   padding: 16px;
 }
 
+.item-card.is-rejected {
+  opacity: 0.72;
+}
+
 .note-card + .note-card,
 .item-card + .item-card {
   margin-top: 12px;
@@ -233,6 +244,61 @@ input {
 .status-pill.warning {
   background: #fff3d8;
   color: #7a4c00;
+}
+
+.status-pill.review-generated {
+  background: #e8edf3;
+  color: #3f4b5f;
+}
+
+.status-pill.review-accepted {
+  background: #dcf6e8;
+  color: #1d633a;
+}
+
+.status-pill.review-edited {
+  background: #e0efff;
+  color: #245984;
+}
+
+.status-pill.review-rejected {
+  background: #fde3df;
+  color: #8b2d22;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.review-actions button {
+  padding: 9px 12px;
+}
+
+.secondary-button {
+  background: #e8edf3;
+  color: #24324a;
+}
+
+.danger-button {
+  background: #8b2d22;
+}
+
+.review-textarea {
+  width: min(760px, 100%);
+}
+
+.owner-input {
+  min-width: min(280px, 100%);
+  padding: 8px 10px;
+}
+
+.original-text {
+  margin: 10px 0 0;
+  color: #667388;
+  font-size: 0.92rem;
 }
 
 .evidence {

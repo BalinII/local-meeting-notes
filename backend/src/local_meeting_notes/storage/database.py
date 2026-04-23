@@ -46,6 +46,10 @@ ACTION_MIGRATIONS = {
     "provider_name": "ALTER TABLE actions ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
     "model_name": "ALTER TABLE actions ADD COLUMN model_name TEXT",
     "generated_at": "ALTER TABLE actions ADD COLUMN generated_at TEXT",
+    "review_status": "ALTER TABLE actions ADD COLUMN review_status TEXT NOT NULL DEFAULT 'generated'",
+    "reviewed_description": "ALTER TABLE actions ADD COLUMN reviewed_description TEXT",
+    "reviewed_owner_name": "ALTER TABLE actions ADD COLUMN reviewed_owner_name TEXT",
+    "reviewed_at": "ALTER TABLE actions ADD COLUMN reviewed_at TEXT",
 }
 
 DECISION_MIGRATIONS = {
@@ -56,6 +60,10 @@ DECISION_MIGRATIONS = {
     "provider_name": "ALTER TABLE decisions ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
     "model_name": "ALTER TABLE decisions ADD COLUMN model_name TEXT",
     "generated_at": "ALTER TABLE decisions ADD COLUMN generated_at TEXT",
+    "review_status": "ALTER TABLE decisions ADD COLUMN review_status TEXT NOT NULL DEFAULT 'generated'",
+    "reviewed_description": "ALTER TABLE decisions ADD COLUMN reviewed_description TEXT",
+    "reviewed_owner_name": "ALTER TABLE decisions ADD COLUMN reviewed_owner_name TEXT",
+    "reviewed_at": "ALTER TABLE decisions ADD COLUMN reviewed_at TEXT",
 }
 
 FOLLOW_UP_MIGRATIONS = {
@@ -69,6 +77,10 @@ FOLLOW_UP_MIGRATIONS = {
     "provider_name": "ALTER TABLE follow_ups ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
     "model_name": "ALTER TABLE follow_ups ADD COLUMN model_name TEXT",
     "generated_at": "ALTER TABLE follow_ups ADD COLUMN generated_at TEXT",
+    "review_status": "ALTER TABLE follow_ups ADD COLUMN review_status TEXT NOT NULL DEFAULT 'generated'",
+    "reviewed_description": "ALTER TABLE follow_ups ADD COLUMN reviewed_description TEXT",
+    "reviewed_owner_name": "ALTER TABLE follow_ups ADD COLUMN reviewed_owner_name TEXT",
+    "reviewed_at": "ALTER TABLE follow_ups ADD COLUMN reviewed_at TEXT",
 }
 
 

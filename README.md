@@ -56,6 +56,11 @@ Phase 7 adds output review and export:
 - visible uncertainty for unknown or unconfirmed ownership
 - evidence snippets and provider metadata in review/export views
 
+Phase 8 adds a lightweight human review workflow:
+- extracted actions, decisions, follow-ups, risks, and open questions can be accepted, edited, or rejected
+- reviewed state is stored locally in SQLite beside the generated output
+- exports prefer reviewed text and omit rejected extracted items from Markdown and HTML
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -188,6 +193,7 @@ python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
 python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
 python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
+python -m local_meeting_notes.app review update-item --item-type action --item-id 1 --review-status edited --description "Reviewed action text"
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
@@ -278,6 +284,7 @@ The desktop shell now opens a lightweight review workspace:
 - enter a capture id
 - load persisted summaries and extracted outputs
 - expand evidence snippets
+- edit, save, accept, or reject extracted items
 - export Markdown, HTML, or JSON through the local backend
 
 ## Notes
@@ -292,6 +299,9 @@ The desktop shell now opens a lightweight review workspace:
 - Summaries, actions, decisions, and follow-ups are persisted in SQLite by `capture_id`.
 - Summary and extraction rows also store provider metadata so you can tell whether the heuristic or local LLM path produced them.
 - Summary and extraction outputs include transcript evidence snippets where practical.
+- Extracted output rows keep generated text and reviewed text separately, with `generated`, `accepted`, `edited`, or `rejected` review status.
+- Markdown and HTML exports use reviewed descriptions and reviewed owner text where present, and skip rejected extracted items.
+- JSON exports include generated, reviewed, effective, and review status fields for local inspection.
 - Ownership may remain `Unknown` or `Unconfirmed speaker` when diarization is weak or missing.
 - `local_llm` currently targets Ollama first, but the client boundary is designed so another local OpenAI-compatible runtime can be swapped in later.
 - If Ollama is unreachable, times out, or returns invalid JSON, the app falls back to the heuristic provider instead of failing the whole pipeline.

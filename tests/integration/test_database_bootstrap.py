@@ -64,8 +64,9 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
     assert {"capture_id", "source_chunk_path", "transcription_status", "provider_name", "model_name", "error_message"}.issubset(columns)
     assert {"capture_id", "source_audio_path", "diarization_status", "speaker_label", "provider_name", "confidence", "error_message"}.issubset(diarization_columns)
     assert {"capture_id", "title", "evidence_snippet", "provider_name", "model_name", "generated_at"}.issubset(summary_columns)
-    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at"}.issubset(action_columns)
-    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at"}.issubset(decision_columns)
-    assert {"capture_id", "follow_up_type", "owner_name", "status", "evidence_snippet", "provider_name", "model_name", "generated_at"}.issubset(follow_up_columns)
+    review_columns = {"review_status", "reviewed_description", "reviewed_owner_name", "reviewed_at"}
+    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at", *review_columns}.issubset(action_columns)
+    assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at", *review_columns}.issubset(decision_columns)
+    assert {"capture_id", "follow_up_type", "owner_name", "status", "evidence_snippet", "provider_name", "model_name", "generated_at", *review_columns}.issubset(follow_up_columns)
     assert row["external_id"] == "mock-test-001"
     assert row["title"] == "Mock Test Meeting"

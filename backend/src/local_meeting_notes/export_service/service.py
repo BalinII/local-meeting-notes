@@ -15,10 +15,12 @@ from ..storage.repository import (
     fetch_decisions_for_capture,
     fetch_follow_ups_for_capture,
     fetch_summaries_for_capture,
+    update_extracted_item_review,
 )
 
 
 EXPORT_FORMATS = {"markdown", "html", "json"}
+REVIEW_STATUSES = {"generated", "accepted", "edited", "rejected"}
 
 
 class ExportService:
@@ -36,6 +38,9 @@ class ExportService:
             follow_ups = [dict(row) for row in fetch_follow_ups_for_capture(connection, capture_id)]
 
         summaries = _consolidate_summaries(raw_summaries)
+        actions = [_with_review_fields(item, "action") for item in actions]
+        decisions = [_with_review_fields(item, "decision") for item in decisions]
+        follow_ups = [_with_review_fields(item, "follow_up") for item in follow_ups]
         blockers_risks = [item for item in follow_ups if item["follow_up_type"] == "blocker_risk"]
         open_questions = [item for item in follow_ups if item["follow_up_type"] == "open_question"]
         other_follow_ups = [item for item in follow_ups if item["follow_up_type"] == "follow_up"]
@@ -74,6 +79,44 @@ class ExportService:
             "blockers_risks": blockers_risks,
             "open_questions": open_questions,
         }
+
+    def review_item(
+        self,
+        *,
+        item_type: str,
+        item_id: int,
+        review_status: str,
+        reviewed_description: str | None = None,
+        reviewed_owner_name: str | None = None,
+    ) -> dict[str, Any]:
+        if review_status not in REVIEW_STATUSES:
+            raise ValueError(f"Unsupported review status: {review_status}")
+        if item_type not in {"action", "decision", "follow_up"}:
+            raise ValueError(f"Unsupported review item type: {item_type}")
+
+        reviewed_at = _now_timestamp()
+        description = _clean_review_text(reviewed_description)
+        owner_name = _clean_review_text(reviewed_owner_name)
+        if review_status in {"generated", "accepted", "rejected"}:
+            description = None
+            owner_name = None
+
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            row = update_extracted_item_review(
+                connection,
+                item_type=item_type,
+                item_id=item_id,
+                review_status=review_status,
+                reviewed_description=description,
+                reviewed_owner_name=owner_name,
+                reviewed_at=reviewed_at,
+            )
+            connection.commit()
+
+        if row is None:
+            raise ValueError(f"No {item_type} found with id {item_id}.")
+        return _with_review_fields(dict(row), item_type)
 
     def render_export(self, capture_id: str, export_format: str) -> str:
         payload = self.build_review_payload(capture_id)
@@ -264,11 +307,12 @@ def _markdown_items(
     title: str, items: list[dict[str, Any]], *, include_owner: bool = False
 ) -> list[str]:
     lines = [f"## {title}", ""]
-    if not items:
+    exportable_items = _exportable_items(items)
+    if not exportable_items:
         return lines + [f"No {title.lower()} found.", ""]
-    for item in items:
+    for item in exportable_items:
         owner = f" [{_owner_label(item)}]" if include_owner else ""
-        lines.append(f"- {item['description']}{owner}")
+        lines.append(f"- {_effective_description(item)}{owner}")
         if item.get("start_offset_seconds") is not None:
             lines.append(f"  - Time: {item['start_offset_seconds']}-{item['end_offset_seconds']}s")
         lines.append(f"  - {_metadata_line(item)}")
@@ -293,16 +337,17 @@ def _html_summaries(summaries: list[dict[str, Any]]) -> str:
 
 
 def _html_items(title: str, items: list[dict[str, Any]], *, include_owner: bool = False) -> str:
-    if not items:
+    exportable_items = _exportable_items(items)
+    if not exportable_items:
         return f"<section><h2>{html.escape(title)}</h2><p>No {html.escape(title.lower())} found.</p></section>"
     rows = []
-    for item in items:
+    for item in exportable_items:
         owner = f" <span class=\"badge\">{html.escape(_owner_label(item))}</span>" if include_owner else ""
         timing = ""
         if item.get("start_offset_seconds") is not None:
             timing = f"<p class=\"evidence\">Time: {item['start_offset_seconds']}-{item['end_offset_seconds']}s</p>"
         rows.append(
-            f"<li><strong>{html.escape(str(item['description']))}</strong>{owner}"
+            f"<li><strong>{html.escape(_effective_description(item))}</strong>{owner}"
             f"{timing}<p class=\"badge\">{html.escape(_metadata_line(item))}</p>{_html_evidence(item)}</li>"
         )
     return f"<section><h2>{html.escape(title)}</h2><ul>{''.join(rows)}</ul></section>"
@@ -321,10 +366,37 @@ def _metadata_line(item: dict[str, Any]) -> str:
 
 
 def _owner_label(item: dict[str, Any]) -> str:
-    owner = item.get("owner_name") or "Unconfirmed speaker"
+    owner = item.get("effective_owner_name") or item.get("owner_name") or "Unconfirmed speaker"
     if owner in {"Unknown", "Unconfirmed speaker"}:
         return f"{owner} - review ownership"
     return str(owner)
+
+
+def _with_review_fields(item: dict[str, Any], item_type: str) -> dict[str, Any]:
+    review_status = item.get("review_status") or "generated"
+    reviewed_description = _clean_review_text(item.get("reviewed_description"))
+    reviewed_owner_name = _clean_review_text(item.get("reviewed_owner_name"))
+    item["item_type"] = item_type
+    item["review_status"] = review_status
+    item["effective_description"] = reviewed_description or str(item.get("description") or "")
+    item["effective_owner_name"] = reviewed_owner_name or item.get("owner_name")
+    item["is_rejected"] = review_status == "rejected"
+    return item
+
+
+def _exportable_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in items if item.get("review_status") != "rejected"]
+
+
+def _effective_description(item: dict[str, Any]) -> str:
+    return str(item.get("effective_description") or item.get("description") or "")
+
+
+def _clean_review_text(value: object) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
 
 
 def _now_timestamp() -> str:

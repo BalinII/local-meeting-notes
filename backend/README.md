@@ -110,6 +110,7 @@ Quality retest flow:
 ## Review And Export Notes
 
 - Phase 7 adds a review payload and export service on top of existing SQLite outputs.
+- Phase 8 adds local review state for extracted items. Generated descriptions stay intact; reviewed descriptions, reviewed owner text, review status, and review timestamps are stored separately.
 - Export formats:
   - Markdown: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format markdown`
   - HTML: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format html`
@@ -117,5 +118,9 @@ Quality retest flow:
 - Review payload command:
   - `python -m local_meeting_notes.app review show --capture-id <capture-id> --format json`
   - `python -m local_meeting_notes.app review show --capture-id <capture-id> --format markdown`
+- Review update command:
+  - `python -m local_meeting_notes.app review update-item --item-type action --item-id <id> --review-status accepted`
+  - `python -m local_meeting_notes.app review update-item --item-type follow_up --item-id <id> --review-status edited --description "Reviewed text" --owner-name "Reviewed owner"`
 - Exported files are written to `backend/data/exports/<capture-id>/`.
 - The payload separates follow-ups, blockers/risks, and open questions for cleaner review.
+- Markdown and HTML exports use reviewed text where available and omit rejected extracted items. JSON exports keep the full review payload, including original and reviewed fields.

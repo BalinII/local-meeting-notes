@@ -50,6 +50,10 @@ SCHEMA_STATEMENTS = (
         provider_name TEXT NOT NULL DEFAULT 'heuristic',
         model_name TEXT,
         generated_at TEXT,
+        review_status TEXT NOT NULL DEFAULT 'generated',
+        reviewed_description TEXT,
+        reviewed_owner_name TEXT,
+        reviewed_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -67,6 +71,10 @@ SCHEMA_STATEMENTS = (
         provider_name TEXT NOT NULL DEFAULT 'heuristic',
         model_name TEXT,
         generated_at TEXT,
+        review_status TEXT NOT NULL DEFAULT 'generated',
+        reviewed_description TEXT,
+        reviewed_owner_name TEXT,
+        reviewed_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -82,6 +90,10 @@ SCHEMA_STATEMENTS = (
         provider_name TEXT NOT NULL DEFAULT 'heuristic',
         model_name TEXT,
         generated_at TEXT,
+        review_status TEXT NOT NULL DEFAULT 'generated',
+        reviewed_description TEXT,
+        reviewed_owner_name TEXT,
+        reviewed_at TEXT,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,

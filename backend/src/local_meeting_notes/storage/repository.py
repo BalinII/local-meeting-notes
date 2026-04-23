@@ -347,6 +347,49 @@ def fetch_follow_ups_for_capture(connection: sqlite3.Connection, capture_id: str
     ).fetchall()
 
 
+def update_extracted_item_review(
+    connection: sqlite3.Connection,
+    *,
+    item_type: str,
+    item_id: int,
+    review_status: str,
+    reviewed_description: str | None,
+    reviewed_owner_name: str | None,
+    reviewed_at: str,
+) -> sqlite3.Row | None:
+    table_name = _table_name_for_extracted_item(item_type)
+    connection.execute(
+        f"""
+        UPDATE {table_name}
+        SET
+            review_status = ?,
+            reviewed_description = ?,
+            reviewed_owner_name = ?,
+            reviewed_at = ?
+        WHERE id = ?
+        """,
+        (review_status, reviewed_description, reviewed_owner_name, reviewed_at, item_id),
+    )
+    return connection.execute(
+        f"""
+        SELECT *
+        FROM {table_name}
+        WHERE id = ?
+        """,
+        (item_id,),
+    ).fetchone()
+
+
+def _table_name_for_extracted_item(item_type: str) -> str:
+    if item_type == "action":
+        return "actions"
+    if item_type == "decision":
+        return "decisions"
+    if item_type == "follow_up":
+        return "follow_ups"
+    raise ValueError(f"Unsupported review item type: {item_type}")
+
+
 def insert_diarization_segment(
     connection: sqlite3.Connection, segment: DiarizationSegmentRecord
 ) -> int:

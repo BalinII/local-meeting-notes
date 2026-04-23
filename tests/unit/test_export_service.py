@@ -160,6 +160,8 @@ def test_export_payload_groups_outputs_for_review(local_tmp_dir) -> None:
     assert "Exports should preserve the same consolidated review structure" in payload["summaries"][1]["content"]
     assert payload["summaries"][1]["content"].count("Detailed Summary") == 0
     assert "Export should match the review payload" in payload["summaries"][1]["evidence_snippet"]
+    assert payload["actions"][0]["review_status"] == "generated"
+    assert payload["actions"][0]["effective_description"] == payload["actions"][0]["description"]
     assert payload["actions"][0]["owner_name"] == "Unconfirmed speaker"
     assert payload["blockers_risks"][0]["description"] == "Review extraction quality before sharing notes."
     assert payload["open_questions"][0]["description"] == "Which export format should be shared by default?"
@@ -182,6 +184,42 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     assert html.count("<h3>Detailed Summary</h3>") == 1
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
+
+
+def test_reviewed_items_are_persisted_and_used_for_exports(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_outputs(config)
+    service = ExportService(config)
+    payload = service.build_review_payload("capture-export")
+    action_id = payload["actions"][0]["id"]
+    decision_id = payload["decisions"][0]["id"]
+
+    edited = service.review_item(
+        item_type="action",
+        item_id=action_id,
+        review_status="edited",
+        reviewed_description="Share reviewed Markdown and HTML exports.",
+        reviewed_owner_name="Ben",
+    )
+    service.review_item(
+        item_type="decision",
+        item_id=decision_id,
+        review_status="rejected",
+    )
+
+    next_payload = service.build_review_payload("capture-export")
+    markdown = service.render_export("capture-export", "markdown")
+    html = service.render_export("capture-export", "html")
+
+    assert edited["review_status"] == "edited"
+    assert edited["effective_description"] == "Share reviewed Markdown and HTML exports."
+    assert edited["effective_owner_name"] == "Ben"
+    assert next_payload["actions"][0]["reviewed_description"] == "Share reviewed Markdown and HTML exports."
+    assert "Share reviewed Markdown and HTML exports. [Ben]" in markdown
+    assert "Export Markdown, HTML, and JSON outputs." not in markdown
+    assert "Keep the review workflow local-first." not in markdown
+    assert "Share reviewed Markdown and HTML exports." in html
+    assert "Keep the review workflow local-first." not in html
 
 
 def test_export_service_writes_files(local_tmp_dir) -> None:

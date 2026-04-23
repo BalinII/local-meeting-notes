@@ -9,10 +9,19 @@ export type SummaryOutput = {
 };
 
 export type ExtractedOutput = {
+  id: number;
+  item_type: "action" | "decision" | "follow_up";
   description: string;
+  effective_description?: string | null;
   owner_name?: string | null;
+  effective_owner_name?: string | null;
   status?: string | null;
   follow_up_type?: string | null;
+  review_status?: "generated" | "accepted" | "edited" | "rejected";
+  reviewed_description?: string | null;
+  reviewed_owner_name?: string | null;
+  reviewed_at?: string | null;
+  is_rejected?: boolean;
   evidence_snippet?: string | null;
   start_offset_seconds?: number | null;
   end_offset_seconds?: number | null;
@@ -68,6 +77,33 @@ export async function exportReview(captureId: string, format: "markdown" | "html
   return invoke<string>("export_capture", { captureId, format });
 }
 
+export async function saveReviewItem(input: {
+  itemType: ExtractedOutput["item_type"];
+  itemId: number;
+  reviewStatus: NonNullable<ExtractedOutput["review_status"]>;
+  description?: string | null;
+  ownerName?: string | null;
+}): Promise<ExtractedOutput> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return {
+      id: input.itemId,
+      item_type: input.itemType,
+      description: input.description || "Demo reviewed item",
+      effective_description: input.description || "Demo reviewed item",
+      owner_name: input.ownerName,
+      effective_owner_name: input.ownerName,
+      review_status: input.reviewStatus,
+      reviewed_description: input.reviewStatus === "edited" ? input.description : null,
+      reviewed_owner_name: input.reviewStatus === "edited" ? input.ownerName : null,
+      reviewed_at: new Date().toISOString(),
+      is_rejected: input.reviewStatus === "rejected",
+      provider_name: "demo",
+    };
+  }
+  return invoke<ExtractedOutput>("save_review_item", input);
+}
+
 function demoPayload(captureId: string): ReviewPayload {
   return {
     capture_id: captureId || "demo-capture",
@@ -100,15 +136,24 @@ function demoPayload(captureId: string): ReviewPayload {
     ],
     actions: [
       {
+        id: 1,
+        item_type: "action",
         description: "Prepare a review screen for persisted meeting-note outputs.",
+        effective_description: "Prepare a review screen for persisted meeting-note outputs.",
         owner_name: "Unconfirmed speaker",
+        effective_owner_name: "Unconfirmed speaker",
+        review_status: "generated",
         evidence_snippet: "Action item: prepare a review screen.",
         provider_name: "local_llm",
       },
     ],
     decisions: [
       {
+        id: 2,
+        item_type: "decision",
         description: "Keep export and review local-first.",
+        effective_description: "Keep export and review local-first.",
+        review_status: "accepted",
         evidence_snippet: "Decision: keep export and review local-first.",
         provider_name: "local_llm",
       },
@@ -116,16 +161,26 @@ function demoPayload(captureId: string): ReviewPayload {
     follow_ups: [],
     blockers_risks: [
       {
+        id: 3,
+        item_type: "follow_up",
         description: "Extraction quality still needs review before sharing notes.",
+        effective_description: "Extraction quality still needs review before sharing notes.",
         owner_name: "Unknown",
+        effective_owner_name: "Unknown",
+        review_status: "generated",
         evidence_snippet: "Risk: extracted items may need manual review.",
         provider_name: "local_llm",
       },
     ],
     open_questions: [
       {
+        id: 4,
+        item_type: "follow_up",
         description: "Which export format should be the default for internal sharing?",
+        effective_description: "Which export format should be the default for internal sharing?",
         owner_name: "Unconfirmed speaker",
+        effective_owner_name: "Unconfirmed speaker",
+        review_status: "generated",
         evidence_snippet: "Open question: what should the default export be?",
         provider_name: "local_llm",
       },

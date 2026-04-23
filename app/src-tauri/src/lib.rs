@@ -29,6 +29,38 @@ fn export_capture(capture_id: String, format: String) -> Result<String, String> 
     Ok(output.trim().to_string())
 }
 
+#[tauri::command]
+fn save_review_item(
+    item_type: String,
+    item_id: i64,
+    review_status: String,
+    description: Option<String>,
+    owner_name: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let item_id_arg = item_id.to_string();
+    let mut args = vec![
+        "review",
+        "update-item",
+        "--item-type",
+        item_type.as_str(),
+        "--item-id",
+        item_id_arg.as_str(),
+        "--review-status",
+        review_status.as_str(),
+    ];
+    if let Some(value) = description.as_deref() {
+        args.push("--description");
+        args.push(value);
+    }
+    if let Some(value) = owner_name.as_deref() {
+        args.push("--owner-name");
+        args.push(value);
+    }
+
+    let output = run_backend(&args)?;
+    serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+}
+
 fn run_backend(args: &[&str]) -> Result<String, String> {
     let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -66,7 +98,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scaffold_status,
             review_capture,
-            export_capture
+            export_capture,
+            save_review_item
         ])
         .run(tauri::generate_context!())
         .expect("error while running Local Meeting Notes");

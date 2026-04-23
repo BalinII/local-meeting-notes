@@ -1,5 +1,12 @@
-import { useState } from "react";
-import { exportReview, loadReviewPayload, type ExtractedOutput, type ReviewPayload, type SummaryOutput } from "../lib/reviewApi";
+import { useEffect, useState } from "react";
+import {
+  exportReview,
+  loadReviewPayload,
+  saveReviewItem,
+  type ExtractedOutput,
+  type ReviewPayload,
+  type SummaryOutput,
+} from "../lib/reviewApi";
 
 export function AppShell() {
   const [captureId, setCaptureId] = useState("");
@@ -34,6 +41,28 @@ export function AppShell() {
     try {
       const message = await exportReview(payload.capture_id, format);
       setStatus(message);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleReviewItem(
+    item: ExtractedOutput,
+    reviewStatus: NonNullable<ExtractedOutput["review_status"]>,
+    values?: { description?: string; ownerName?: string | null },
+  ) {
+    if (!payload) return;
+    setStatus(`Saving ${reviewStatus} review state...`);
+    try {
+      const saved = await saveReviewItem({
+        itemType: item.item_type,
+        itemId: item.id,
+        reviewStatus,
+        description: values?.description ?? item.effective_description ?? item.description,
+        ownerName: values?.ownerName ?? item.effective_owner_name ?? item.owner_name,
+      });
+      setPayload(updateReviewedItem(payload, { ...item, ...saved }));
+      setStatus(`Saved ${reviewStatus} review state.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -90,11 +119,23 @@ export function AppShell() {
 
           <section className="review-content">
             <SummaryPanel summaries={payload.summaries} />
-            <ItemPanel title="Actions" items={payload.actions} showOwner />
-            <ItemPanel title="Decisions" items={payload.decisions} />
-            <ItemPanel title="Follow-ups" items={payload.follow_ups} showOwner />
-            <ItemPanel title="Blockers / Risks" items={payload.blockers_risks} showOwner tone="risk" />
-            <ItemPanel title="Open Questions" items={payload.open_questions} showOwner tone="question" />
+            <ItemPanel title="Actions" items={payload.actions} showOwner onReviewItem={handleReviewItem} />
+            <ItemPanel title="Decisions" items={payload.decisions} onReviewItem={handleReviewItem} />
+            <ItemPanel title="Follow-ups" items={payload.follow_ups} showOwner onReviewItem={handleReviewItem} />
+            <ItemPanel
+              title="Blockers / Risks"
+              items={payload.blockers_risks}
+              showOwner
+              tone="risk"
+              onReviewItem={handleReviewItem}
+            />
+            <ItemPanel
+              title="Open Questions"
+              items={payload.open_questions}
+              showOwner
+              tone="question"
+              onReviewItem={handleReviewItem}
+            />
           </section>
         </section>
       ) : (
@@ -156,11 +197,17 @@ function ItemPanel({
   items,
   showOwner = false,
   tone,
+  onReviewItem,
 }: {
   title: string;
   items: ExtractedOutput[];
   showOwner?: boolean;
   tone?: "risk" | "question";
+  onReviewItem: (
+    item: ExtractedOutput,
+    reviewStatus: NonNullable<ExtractedOutput["review_status"]>,
+    values?: { description?: string; ownerName?: string | null },
+  ) => Promise<void>;
 }) {
   return (
     <section className={`panel ${tone ? `panel-${tone}` : ""}`}>
@@ -171,21 +218,12 @@ function ItemPanel({
       {items.length ? (
         <div className="item-list">
           {items.map((item, index) => (
-            <article className="note-card item-card" key={`${title}-${index}`}>
-              <div className="card-title-row">
-                <h3>{item.description}</h3>
-                <ProviderBadge item={item} />
-              </div>
-              <div className="badge-row">
-                {showOwner ? <OwnerBadge owner={item.owner_name} /> : null}
-                {item.start_offset_seconds != null ? (
-                  <span className="status-pill subtle">
-                    {item.start_offset_seconds}-{item.end_offset_seconds}s
-                  </span>
-                ) : null}
-              </div>
-              <Evidence text={item.evidence_snippet} />
-            </article>
+            <ReviewItemCard
+              item={item}
+              key={`${title}-${item.item_type}-${item.id}-${index}`}
+              showOwner={showOwner}
+              onReviewItem={onReviewItem}
+            />
           ))}
         </div>
       ) : (
@@ -193,6 +231,130 @@ function ItemPanel({
       )}
     </section>
   );
+}
+
+function ReviewItemCard({
+  item,
+  showOwner,
+  onReviewItem,
+}: {
+  item: ExtractedOutput;
+  showOwner: boolean;
+  onReviewItem: (
+    item: ExtractedOutput,
+    reviewStatus: NonNullable<ExtractedOutput["review_status"]>,
+    values?: { description?: string; ownerName?: string | null },
+  ) => Promise<void>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [description, setDescription] = useState(item.effective_description || item.description);
+  const [ownerName, setOwnerName] = useState(item.effective_owner_name || item.owner_name || "");
+  const [isSaving, setIsSaving] = useState(false);
+  const reviewStatus = item.review_status || "generated";
+
+  useEffect(() => {
+    if (isEditing) return;
+    setDescription(item.effective_description || item.description);
+    setOwnerName(item.effective_owner_name || item.owner_name || "");
+  }, [isEditing, item.description, item.effective_description, item.effective_owner_name, item.owner_name]);
+
+  async function runReviewUpdate(
+    nextStatus: NonNullable<ExtractedOutput["review_status"]>,
+    values?: { description?: string; ownerName?: string | null },
+  ) {
+    setIsSaving(true);
+    try {
+      await onReviewItem(item, nextStatus, values);
+      if (nextStatus === "edited") setIsEditing(false);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <article className={`note-card item-card ${reviewStatus === "rejected" ? "is-rejected" : ""}`}>
+      <div className="card-title-row">
+        <div>
+          {isEditing ? (
+            <textarea
+              aria-label="Reviewed description"
+              className="review-textarea"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          ) : (
+            <h3>{item.effective_description || item.description}</h3>
+          )}
+        </div>
+        <ProviderBadge item={item} />
+      </div>
+      <div className="badge-row">
+        <ReviewStatusBadge status={reviewStatus} />
+        {showOwner && isEditing ? (
+          <input
+            aria-label="Reviewed owner"
+            className="owner-input"
+            placeholder="Unconfirmed speaker"
+            value={ownerName}
+            onChange={(event) => setOwnerName(event.target.value)}
+          />
+        ) : showOwner ? (
+          <OwnerBadge owner={item.effective_owner_name || item.owner_name} />
+        ) : null}
+        {item.start_offset_seconds != null ? (
+          <span className="status-pill subtle">
+            {item.start_offset_seconds}-{item.end_offset_seconds}s
+          </span>
+        ) : null}
+      </div>
+      {item.reviewed_description ? <p className="original-text">Original: {item.description}</p> : null}
+      <div className="review-actions">
+        {isEditing ? (
+          <>
+            <button
+              onClick={() =>
+                void runReviewUpdate("edited", {
+                  description,
+                  ownerName: showOwner ? ownerName : null,
+                })
+              }
+              disabled={isSaving}
+            >
+              Save
+            </button>
+            <button className="secondary-button" onClick={() => setIsEditing(false)} disabled={isSaving}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="secondary-button" onClick={() => setIsEditing(true)} disabled={isSaving}>
+              Edit
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => void runReviewUpdate("accepted")}
+              disabled={isSaving}
+            >
+              Accept
+            </button>
+            <button
+              className="danger-button"
+              onClick={() => void runReviewUpdate("rejected")}
+              disabled={isSaving}
+            >
+              Reject
+            </button>
+          </>
+        )}
+      </div>
+      <Evidence text={item.evidence_snippet} />
+    </article>
+  );
+}
+
+function ReviewStatusBadge({ status }: { status: string }) {
+  return <span className={`status-pill review-${status}`}>{status}</span>;
 }
 
 function OwnerBadge({ owner }: { owner?: string | null }) {
@@ -224,4 +386,19 @@ function Evidence({ text }: { text?: string | null }) {
 function formatDate(value?: string | null) {
   if (!value) return "Unknown";
   return value;
+}
+
+function updateReviewedItem(payload: ReviewPayload, item: ExtractedOutput): ReviewPayload {
+  const updateItems = (items: ExtractedOutput[]) =>
+    items.map((candidate) =>
+      candidate.item_type === item.item_type && candidate.id === item.id ? item : candidate,
+    );
+  return {
+    ...payload,
+    actions: updateItems(payload.actions),
+    decisions: updateItems(payload.decisions),
+    follow_ups: updateItems(payload.follow_ups),
+    blockers_risks: updateItems(payload.blockers_risks),
+    open_questions: updateItems(payload.open_questions),
+  };
 }

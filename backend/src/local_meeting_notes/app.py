@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -137,6 +138,16 @@ def build_parser() -> argparse.ArgumentParser:
     review_show = review_subparsers.add_parser("show", help="Show a review payload for a capture.")
     review_show.add_argument("--capture-id", required=True)
     review_show.add_argument("--format", choices=("json", "markdown"), default="json")
+    review_update = review_subparsers.add_parser(
+        "update-item", help="Save review state for an extracted item."
+    )
+    review_update.add_argument("--item-type", choices=("action", "decision", "follow_up"), required=True)
+    review_update.add_argument("--item-id", type=int, required=True)
+    review_update.add_argument(
+        "--review-status", choices=("generated", "accepted", "edited", "rejected"), required=True
+    )
+    review_update.add_argument("--description")
+    review_update.add_argument("--owner-name")
 
     export_parser = subparsers.add_parser("export", help="Export meeting-note outputs.")
     export_subparsers = export_parser.add_subparsers(dest="export_command", required=True)
@@ -553,6 +564,30 @@ def run_review_show(capture_id: str, export_format: str) -> int:
     return 1
 
 
+def run_review_update_item(
+    *,
+    item_type: str,
+    item_id: int,
+    review_status: str,
+    description: str | None = None,
+    owner_name: str | None = None,
+) -> int:
+    service = _get_export_service()
+    try:
+        item = service.review_item(
+            item_type=item_type,
+            item_id=item_id,
+            review_status=review_status,
+            reviewed_description=description,
+            reviewed_owner_name=owner_name,
+        )
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(item, ensure_ascii=False))
+    return 0
+
+
 def run_export_capture(capture_id: str, export_format: str) -> int:
     service = _get_export_service()
     try:
@@ -616,6 +651,14 @@ def main(argv: list[str] | None = None) -> int:
         return run_llm_check()
     if args.command == "review" and args.review_command == "show":
         return run_review_show(args.capture_id, args.format)
+    if args.command == "review" and args.review_command == "update-item":
+        return run_review_update_item(
+            item_type=args.item_type,
+            item_id=args.item_id,
+            review_status=args.review_status,
+            description=args.description,
+            owner_name=args.owner_name,
+        )
     if args.command == "export" and args.export_command == "run":
         return run_export_capture(args.capture_id, args.format)
 
