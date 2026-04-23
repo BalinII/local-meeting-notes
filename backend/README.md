@@ -14,6 +14,7 @@ This package contains:
 - local summary generation
 - local action and decision extraction
 - local LLM-backed summary and extraction providers
+- Markdown, HTML, and JSON exports
 
 ## Windows Loopback Notes
 
@@ -105,3 +106,16 @@ Quality retest flow:
 - Run `summary generate` and `actions extract` with `--provider local_llm` on a real capture.
 - Inspect `summary show` and `actions list`.
 - Confirm garbled ASR fragments are omitted, evidence snippets still point back to transcript text, and uncertain ownership remains generic.
+
+## Review And Export Notes
+
+- Phase 7 adds a review payload and export service on top of existing SQLite outputs.
+- Export formats:
+  - Markdown: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format markdown`
+  - HTML: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format html`
+  - JSON: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format json`
+- Review payload command:
+  - `python -m local_meeting_notes.app review show --capture-id <capture-id> --format json`
+  - `python -m local_meeting_notes.app review show --capture-id <capture-id> --format markdown`
+- Exported files are written to `backend/data/exports/<capture-id>/`.
+- The payload separates follow-ups, blockers/risks, and open questions for cleaner review.

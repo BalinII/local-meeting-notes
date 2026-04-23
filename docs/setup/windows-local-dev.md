@@ -109,7 +109,29 @@ Quality retest checklist:
 - Check `actions list` for fewer malformed decisions/actions and evidence snippets that still support each item.
 - Treat remaining `Unknown` or `Unconfirmed speaker` ownership as expected until participant identity mapping exists.
 
-## 10. Notes
+## 10. Review and export outputs
+
+```powershell
+python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
+```
+
+Desktop review:
+
+```powershell
+Set-Location .\app
+npm run tauri:dev
+```
+
+Notes:
+- Enter a capture id in the app to load current persisted outputs.
+- Exports are written under `backend/data/exports/<capture-id>/`.
+- Evidence snippets and provider metadata are shown where available.
+- `Unknown` and `Unconfirmed speaker` are expected uncertainty labels, not errors.
+
+## 11. Notes
 
 - Keep `.env` local and out of source control.
 - The backend creates local data folders on startup.

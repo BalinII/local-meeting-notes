@@ -11,6 +11,7 @@ from .audio_capture.dependencies import AudioDependencyError
 from .audio_capture.worker import run_capture_worker
 from .audio_capture.service import AudioCaptureService
 from .diarization_engine.service import DiarizationEngineService
+from .export_service.service import EXPORT_FORMATS, ExportService
 from .local_llm import LocalLlmClientError, build_local_llm_client
 from .models import ActionRecord, DecisionRecord, SummaryRecord
 from .summarizer.service import SummarizerService
@@ -130,6 +131,18 @@ def build_parser() -> argparse.ArgumentParser:
     llm_parser = subparsers.add_parser("llm", help="Local LLM runtime commands.")
     llm_subparsers = llm_parser.add_subparsers(dest="llm_command", required=True)
     llm_subparsers.add_parser("check", help="Check whether the local LLM runtime is reachable.")
+
+    review_parser = subparsers.add_parser("review", help="Review persisted meeting-note outputs.")
+    review_subparsers = review_parser.add_subparsers(dest="review_command", required=True)
+    review_show = review_subparsers.add_parser("show", help="Show a review payload for a capture.")
+    review_show.add_argument("--capture-id", required=True)
+    review_show.add_argument("--format", choices=("json", "markdown"), default="json")
+
+    export_parser = subparsers.add_parser("export", help="Export meeting-note outputs.")
+    export_subparsers = export_parser.add_subparsers(dest="export_command", required=True)
+    export_run = export_subparsers.add_parser("run", help="Export a capture to markdown, HTML, or JSON.")
+    export_run.add_argument("--capture-id", required=True)
+    export_run.add_argument("--format", choices=tuple(sorted(EXPORT_FORMATS)), required=True)
 
     return parser
 
@@ -521,6 +534,36 @@ def run_llm_check() -> int:
     return 0
 
 
+def _get_export_service() -> ExportService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["export_service"]
+    assert isinstance(service, ExportService)
+    return service
+
+
+def run_review_show(capture_id: str, export_format: str) -> int:
+    service = _get_export_service()
+    if export_format == "json":
+        print(service.render_export(capture_id, "json"))
+        return 0
+    if export_format == "markdown":
+        print(service.render_export(capture_id, "markdown"), end="")
+        return 0
+    print(f"Unsupported review format: {export_format}")
+    return 1
+
+
+def run_export_capture(capture_id: str, export_format: str) -> int:
+    service = _get_export_service()
+    try:
+        output_path = service.export_capture(capture_id, export_format)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(f"Exported {export_format}: {output_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -571,6 +614,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_actions_list(args.capture_id)
     if args.command == "llm" and args.llm_command == "check":
         return run_llm_check()
+    if args.command == "review" and args.review_command == "show":
+        return run_review_show(args.capture_id, args.format)
+    if args.command == "export" and args.export_command == "run":
+        return run_export_capture(args.capture_id, args.format)
 
     parser.error("Unsupported command.")
     return 2

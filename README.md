@@ -50,6 +50,12 @@ Phase 6D tunes local LLM output quality:
 - post-processing filters that reject poorly grounded summaries and outcomes
 - cleaner meeting-note wording while preserving evidence snippets and timestamps
 
+Phase 7 adds output review and export:
+- Markdown, HTML, and JSON exports for persisted capture outputs
+- a basic desktop review screen for summaries and extracted items
+- visible uncertainty for unknown or unconfirmed ownership
+- evidence snippets and provider metadata in review/export views
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -181,6 +187,10 @@ python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
 python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
 python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
 python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
+python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
 ```
 
 ### Windows Audio Libraries
@@ -264,6 +274,12 @@ Set-Location .\app
 npm run tauri:dev
 ```
 
+The desktop shell now opens a lightweight review workspace:
+- enter a capture id
+- load persisted summaries and extracted outputs
+- expand evidence snippets
+- export Markdown, HTML, or JSON through the local backend
+
 ## Notes
 
 - The app is designed for local data storage first.
@@ -280,6 +296,8 @@ npm run tauri:dev
 - `local_llm` currently targets Ollama first, but the client boundary is designed so another local OpenAI-compatible runtime can be swapped in later.
 - If Ollama is unreachable, times out, or returns invalid JSON, the app falls back to the heuristic provider instead of failing the whole pipeline.
 - If the model output is weak, noisy, or not clearly grounded in evidence, the app omits it or falls back rather than polishing unsupported claims.
+- Exports are written under `backend/data/exports/<capture-id>/`.
+- The review UI surfaces uncertain ownership with `Unknown` or `Unconfirmed speaker` badges rather than hiding it.
 - `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
 - System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
 - No Teams bot, cloud pipeline, or production capture flow is included.
