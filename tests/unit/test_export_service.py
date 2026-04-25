@@ -237,3 +237,28 @@ def test_export_service_writes_files(local_tmp_dir) -> None:
     assert markdown_path.exists()
     assert html_path.exists()
     assert json_path.exists()
+
+
+def test_recent_captures_include_review_metadata(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_outputs(config, capture_id="capture-older")
+    _seed_outputs(config, capture_id="capture-newer")
+    service = ExportService(config)
+
+    newer_payload = service.build_review_payload("capture-newer")
+    action_id = newer_payload["actions"][0]["id"]
+    service.review_item(
+        item_type="action",
+        item_id=action_id,
+        review_status="accepted",
+    )
+
+    recent = service.list_recent_captures(limit=5)
+
+    assert [item["capture_id"] for item in recent] == ["capture-newer", "capture-older"]
+    assert recent[0]["has_reviewed_items"] is True
+    assert recent[0]["latest_generated_at"] == "2026-04-23T00:02:00+00:00"
+    assert recent[0]["latest_reviewed_at"] is not None
+    assert recent[0]["providers"] == ["local_llm"]
+    assert recent[0]["models"] == ["llama3.1:8b"]
+    assert recent[1]["has_reviewed_items"] is False

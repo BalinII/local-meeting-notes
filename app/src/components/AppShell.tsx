@@ -1,30 +1,57 @@
 import { useEffect, useState } from "react";
 import {
   exportReview,
+  listRecentCaptures,
   loadReviewPayload,
   saveReviewItem,
   type ExtractedOutput,
+  type RecentCapture,
   type ReviewPayload,
   type SummaryOutput,
 } from "../lib/reviewApi";
 
 export function AppShell() {
-  const [captureId, setCaptureId] = useState("");
+  const [recentCaptures, setRecentCaptures] = useState<RecentCapture[]>([]);
+  const [selectedCaptureId, setSelectedCaptureId] = useState("");
   const [payload, setPayload] = useState<ReviewPayload | null>(null);
-  const [status, setStatus] = useState("Enter a capture id to review persisted notes.");
+  const [status, setStatus] = useState("Select a recent capture to review persisted notes.");
+  const [isRefreshingList, setIsRefreshingList] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  async function handleLoad() {
-    if (!captureId.trim()) {
-      setStatus("Capture id is required.");
-      return;
+  useEffect(() => {
+    void refreshRecentCaptures();
+  }, []);
+
+  async function refreshRecentCaptures() {
+    setIsRefreshingList(true);
+    try {
+      const captures = await listRecentCaptures(12);
+      setRecentCaptures(captures);
+      if (!captures.length) {
+        setStatus("No captures found yet. Run capture/transcribe/summary flows first.");
+        return;
+      }
+      setStatus(`Loaded ${captures.length} recent captures.`);
+      if (!selectedCaptureId || !captures.some((item) => item.capture_id === selectedCaptureId)) {
+        await loadCapture(captures[0].capture_id);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshingList(false);
     }
+  }
+
+  async function loadCapture(captureId: string) {
+    if (!captureId.trim()) return;
     setIsLoading(true);
+    setSelectedCaptureId(captureId);
     setStatus("Loading capture outputs...");
     try {
-      const nextPayload = await loadReviewPayload(captureId.trim());
+      const nextPayload = await loadReviewPayload(captureId);
       setPayload(nextPayload);
-      setStatus(`Loaded ${nextPayload.capture_id}`);
+      setSelectedCaptureId(nextPayload.capture_id);
+      setStatus(`Loaded ${nextPayload.capture_id}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -63,6 +90,7 @@ export function AppShell() {
       });
       setPayload(updateReviewedItem(payload, { ...item, ...saved }));
       setStatus(`Saved ${reviewStatus} review state.`);
+      await refreshRecentCaptures();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -74,22 +102,79 @@ export function AppShell() {
         <p className="eyebrow">Local Review Workspace</p>
         <h1>Meeting Notes Review</h1>
         <p className="hero-copy">
-          Load a capture, review generated summaries and extracted outcomes, then export
+          Choose a recent capture, review generated summaries and extracted outcomes, then export
           Markdown, HTML, or JSON for local sharing.
         </p>
+
+        <div className="capture-picker">
+          <div className="panel-heading compact capture-picker-header">
+            <p className="eyebrow">Recent captures</p>
+            <button
+              className="secondary-button"
+              onClick={() => void refreshRecentCaptures()}
+              disabled={isRefreshingList}
+            >
+              {isRefreshingList ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+          {recentCaptures.length ? (
+            <div className="capture-list">
+              {recentCaptures.map((capture) => {
+                const isSelected = capture.capture_id === selectedCaptureId;
+                return (
+                  <button
+                    key={capture.capture_id}
+                    className={`capture-row ${isSelected ? "active" : ""}`}
+                    onClick={() => void loadCapture(capture.capture_id)}
+                    disabled={isLoading && isSelected}
+                  >
+                    <div className="capture-row-title">
+                      <strong>{capture.capture_id}</strong>
+                      {capture.has_reviewed_items ? (
+                        <span className="status-pill review-edited">Reviewed items</span>
+                      ) : (
+                        <span className="status-pill subtle">Not reviewed</span>
+                      )}
+                    </div>
+                    <p className="capture-row-meta">
+                      Generated: {formatDate(capture.latest_generated_at || capture.created_at)}
+                    </p>
+                    <div className="badge-row">
+                      {capture.providers.length ? (
+                        capture.providers.map((provider) => (
+                          <span className="status-pill subtle" key={`${capture.capture_id}-${provider}`}>
+                            {provider}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="status-pill subtle">Unknown provider</span>
+                      )}
+                      {capture.models.map((model) => (
+                        <span className="status-pill subtle" key={`${capture.capture_id}-${model}`}>
+                          {model}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="muted">No recent captures yet.</p>
+          )}
+        </div>
+
         <div className="capture-toolbar">
-          <input
-            aria-label="Capture id"
-            placeholder="capture-id"
-            value={captureId}
-            onChange={(event) => setCaptureId(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void handleLoad();
-            }}
-          />
-          <button onClick={() => void handleLoad()} disabled={isLoading}>
-            {isLoading ? "Loading..." : "Load Capture"}
-          </button>
+          {payload ? <span className="status-pill">Selected: {payload.capture_id}</span> : null}
+          {payload ? (
+            <button
+              className="secondary-button"
+              onClick={() => void loadCapture(payload.capture_id)}
+              disabled={isLoading}
+            >
+              {isLoading ? "Loading..." : "Reload selected capture"}
+            </button>
+          ) : null}
         </div>
         <p className="status-line">{status}</p>
       </section>
@@ -99,6 +184,7 @@ export function AppShell() {
           <aside className="review-sidebar">
             <p className="eyebrow">Capture</p>
             <h2>{payload.capture_id}</h2>
+            <p>Generated: {formatDate(payload.metadata.latest_generated_at)}</p>
             <p>Exported preview: {formatDate(payload.exported_at)}</p>
             <div className="badge-row">
               {payload.metadata.providers.length ? (
@@ -149,8 +235,8 @@ export function AppShell() {
         <section className="empty-state">
           <h2>No capture loaded</h2>
           <p>
-            The desktop shell uses the local backend through Tauri. In browser-only dev mode,
-            it shows demo data so the review layout remains visible.
+            Pick a recent capture above. In browser-only dev mode this list uses demo captures so
+            the review layout remains visible.
           </p>
         </section>
       )}
@@ -410,7 +496,7 @@ function Evidence({ text }: { text?: string | null }) {
 
 function formatDate(value?: string | null) {
   if (!value) return "Unknown";
-  return value;
+  return new Date(value).toLocaleString();
 }
 
 function updateReviewedItem(payload: ReviewPayload, item: ExtractedOutput): ReviewPayload {

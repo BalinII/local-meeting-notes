@@ -17,6 +17,13 @@ fn review_capture(capture_id: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn list_recent_captures(limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(12).clamp(1, 100).to_string();
+    let output = run_backend(&["review", "recent", "--limit", limit_arg.as_str()])?;
+    serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+}
+
+#[tauri::command]
 fn export_capture(capture_id: String, format: String) -> Result<String, String> {
     let output = run_backend(&[
         "export",
@@ -98,6 +105,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scaffold_status,
             review_capture,
+            list_recent_captures,
             export_capture,
             save_review_item
         ])
