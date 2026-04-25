@@ -97,6 +97,7 @@ export function AppShell() {
       {payload ? (
         <section className="review-layout">
           <aside className="review-sidebar">
+            <p className="eyebrow">Capture</p>
             <h2>{payload.capture_id}</h2>
             <p>Exported preview: {formatDate(payload.exported_at)}</p>
             <div className="badge-row">
@@ -109,6 +110,12 @@ export function AppShell() {
               ) : (
                 <span className="status-pill subtle">Unknown provider</span>
               )}
+            </div>
+            <div className="meta-grid">
+              <MetadataStat label="Summaries" value={payload.metadata.summary_count} />
+              <MetadataStat label="Actions" value={payload.metadata.action_count} />
+              <MetadataStat label="Decisions" value={payload.metadata.decision_count} />
+              <MetadataStat label="Follow-ups" value={payload.metadata.follow_up_count} />
             </div>
             <div className="export-actions">
               <button onClick={() => void handleExport("markdown")}>Export Markdown</button>
@@ -163,7 +170,10 @@ function SummaryPanel({ summaries }: { summaries: SummaryOutput[] }) {
           <article className="note-card" key={`${summary.summary_type}-${summary.title}`}>
             <div className="card-title-row">
               <h3>{summary.title}</h3>
-              <ProviderBadge item={summary} />
+              <div className="card-meta-actions">
+                <ProviderBadge item={summary} />
+                <CopyButton label="Copy summary" value={summary.content} />
+              </div>
             </div>
             <TextBlock text={summary.content} />
             <Evidence text={summary.evidence_snippet} />
@@ -272,7 +282,7 @@ function ReviewItemCard({
   }
 
   return (
-    <article className={`note-card item-card ${reviewStatus === "rejected" ? "is-rejected" : ""}`}>
+    <article className={`note-card item-card review-${reviewStatus}`}>
       <div className="card-title-row">
         <div>
           {isEditing ? (
@@ -286,7 +296,13 @@ function ReviewItemCard({
             <h3>{item.effective_description || item.description}</h3>
           )}
         </div>
-        <ProviderBadge item={item} />
+        <div className="card-meta-actions">
+          <ProviderBadge item={item} />
+          <CopyButton
+            label="Copy item"
+            value={`${item.effective_description || item.description}${showOwner ? `\nOwner: ${item.effective_owner_name || item.owner_name || "Unconfirmed speaker"}` : ""}`}
+          />
+        </div>
       </div>
       <div className="badge-row">
         <ReviewStatusBadge status={reviewStatus} />
@@ -300,6 +316,9 @@ function ReviewItemCard({
           />
         ) : showOwner ? (
           <OwnerBadge owner={item.effective_owner_name || item.owner_name} />
+        ) : null}
+        {isUncertainOwner(item.effective_owner_name || item.owner_name) ? (
+          <span className="status-pill warning">Uncertainty visible</span>
         ) : null}
         {item.start_offset_seconds != null ? (
           <span className="status-pill subtle">
@@ -359,7 +378,7 @@ function ReviewStatusBadge({ status }: { status: string }) {
 
 function OwnerBadge({ owner }: { owner?: string | null }) {
   const label = owner || "Unconfirmed speaker";
-  const uncertain = label === "Unknown" || label === "Unconfirmed speaker";
+  const uncertain = isUncertainOwner(label);
   return <span className={`status-pill ${uncertain ? "warning" : "subtle"}`}>{label}</span>;
 }
 
@@ -374,12 +393,18 @@ function ProviderBadge({ item }: { item: SummaryOutput | ExtractedOutput }) {
 }
 
 function Evidence({ text }: { text?: string | null }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   if (!text) return null;
   return (
-    <details className="evidence">
-      <summary>Evidence</summary>
-      <p>{text}</p>
-    </details>
+    <section className={`evidence ${isExpanded ? "expanded" : ""}`}>
+      <div className="evidence-header">
+        <button className="link-button" onClick={() => setIsExpanded((value) => !value)}>
+          {isExpanded ? "Hide evidence" : "Show evidence"}
+        </button>
+        <CopyButton label="Copy evidence" value={text} />
+      </div>
+      {isExpanded ? <p>{text}</p> : null}
+    </section>
   );
 }
 
@@ -401,4 +426,39 @@ function updateReviewedItem(payload: ReviewPayload, item: ExtractedOutput): Revi
     blockers_risks: updateItems(payload.blockers_risks),
     open_questions: updateItems(payload.open_questions),
   };
+}
+
+function MetadataStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="meta-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function CopyButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      setCopied(false);
+      console.warn("Clipboard write failed", error);
+    }
+  }
+
+  return (
+    <button className="copy-button secondary-button" aria-label={label} onClick={() => void handleCopy()}>
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+function isUncertainOwner(owner?: string | null) {
+  return !owner || owner === "Unknown" || owner === "Unconfirmed speaker";
 }

@@ -128,8 +128,8 @@ textarea {
   position: sticky;
   top: 24px;
   display: grid;
-  gap: 16px;
-  padding: 20px;
+  gap: 18px;
+  padding: 22px;
 }
 
 .review-sidebar h2 {
@@ -148,13 +148,37 @@ textarea {
   gap: 10px;
 }
 
+.meta-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meta-stat {
+  border: 1px solid rgba(23, 32, 51, 0.1);
+  border-radius: 14px;
+  background: rgba(236, 242, 249, 0.7);
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.meta-stat span {
+  color: #607089;
+  font-size: 0.8rem;
+}
+
+.meta-stat strong {
+  font-size: 1.1rem;
+}
+
 .review-content {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .panel {
-  padding: 22px;
+  padding: 24px;
 }
 
 .panel-risk {
@@ -166,7 +190,7 @@ textarea {
 }
 
 .panel-heading {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .panel-heading h2,
@@ -185,11 +209,25 @@ textarea {
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 18px;
   background: #ffffff;
-  padding: 16px;
+  padding: 18px;
 }
 
-.item-card.is-rejected {
-  opacity: 0.72;
+.item-card.review-generated {
+  border-left: 4px solid #99a8bc;
+}
+
+.item-card.review-accepted {
+  border-left: 4px solid #34a26b;
+}
+
+.item-card.review-edited {
+  border-left: 4px solid #3f83cc;
+}
+
+.item-card.review-rejected {
+  border-left: 4px solid #c75549;
+  background: #fffafa;
+  opacity: 0.8;
 }
 
 .note-card + .note-card,
@@ -213,6 +251,14 @@ textarea {
   display: flex;
   gap: 12px;
   justify-content: space-between;
+}
+
+.card-meta-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .badge-row {
@@ -270,7 +316,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .review-actions button {
@@ -280,6 +326,13 @@ textarea {
 .secondary-button {
   background: #e8edf3;
   color: #24324a;
+}
+
+.copy-button {
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 6px 10px;
 }
 
 .danger-button {
@@ -302,19 +355,33 @@ textarea {
 }
 
 .evidence {
-  margin-top: 12px;
+  border-top: 1px solid rgba(23, 32, 51, 0.08);
+  margin-top: 14px;
+  padding-top: 12px;
 }
 
-.evidence summary {
+.evidence-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.link-button {
+  background: transparent;
   color: #35527a;
-  cursor: pointer;
   font-weight: 750;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .evidence p {
   margin: 8px 0 0;
   color: #5b6678;
   white-space: pre-line;
+  border-left: 3px solid #e0e8f2;
+  padding-left: 10px;
 }
 
 .empty-state {
@@ -332,5 +399,9 @@ textarea {
 
   .review-sidebar {
     position: static;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
   }
 }
