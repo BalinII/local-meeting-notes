@@ -14,6 +14,7 @@ from ..storage.repository import (
     fetch_actions_for_capture,
     fetch_decisions_for_capture,
     fetch_follow_ups_for_capture,
+    fetch_recent_capture_activity,
     fetch_summaries_for_capture,
     update_extracted_item_review,
 )
@@ -79,6 +80,26 @@ class ExportService:
             "blockers_risks": blockers_risks,
             "open_questions": open_questions,
         }
+
+    def list_recent_captures(self, limit: int = 12) -> list[dict[str, Any]]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            rows = fetch_recent_capture_activity(connection, limit=limit)
+
+        captures: list[dict[str, Any]] = []
+        for row in rows:
+            captures.append(
+                {
+                    "capture_id": row["capture_id"],
+                    "created_at": row["first_generated_at"],
+                    "latest_generated_at": row["latest_generated_at"],
+                    "latest_reviewed_at": row["latest_reviewed_at"],
+                    "providers": _split_csv_values(row["providers"]),
+                    "models": _split_csv_values(row["models"]),
+                    "has_reviewed_items": bool(row["has_reviewed_items"]),
+                }
+            )
+        return captures
 
     def review_item(
         self,
@@ -301,6 +322,12 @@ def _combined_value(summaries: list[dict[str, Any]], key: str) -> str | None:
 def _latest_value(summaries: list[dict[str, Any]], key: str) -> str | None:
     values = [str(summary[key]) for summary in summaries if summary.get(key)]
     return max(values) if values else None
+
+
+def _split_csv_values(value: Any) -> list[str]:
+    if not value or not isinstance(value, str):
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _markdown_items(

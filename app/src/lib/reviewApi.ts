@@ -49,6 +49,16 @@ export type ReviewPayload = {
   open_questions: ExtractedOutput[];
 };
 
+export type RecentCapture = {
+  capture_id: string;
+  created_at?: string | null;
+  latest_generated_at?: string | null;
+  latest_reviewed_at?: string | null;
+  providers: string[];
+  models: string[];
+  has_reviewed_items: boolean;
+};
+
 type TauriGlobal = {
   core?: {
     invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -67,6 +77,14 @@ export async function loadReviewPayload(captureId: string): Promise<ReviewPayloa
     return demoPayload(captureId);
   }
   return invoke<ReviewPayload>("review_capture", { captureId });
+}
+
+export async function listRecentCaptures(limit = 12): Promise<RecentCapture[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return demoRecentCaptures();
+  }
+  return invoke<RecentCapture[]>("list_recent_captures", { limit });
 }
 
 export async function exportReview(captureId: string, format: "markdown" | "html" | "json") {
@@ -186,4 +204,27 @@ function demoPayload(captureId: string): ReviewPayload {
       },
     ],
   };
+}
+
+function demoRecentCaptures(): RecentCapture[] {
+  return [
+    {
+      capture_id: "capture-demo-002",
+      created_at: "2026-04-24T16:00:00+00:00",
+      latest_generated_at: "2026-04-24T16:08:00+00:00",
+      latest_reviewed_at: "2026-04-24T16:10:00+00:00",
+      providers: ["local_llm"],
+      models: ["llama3.1:8b"],
+      has_reviewed_items: true,
+    },
+    {
+      capture_id: "capture-demo-001",
+      created_at: "2026-04-23T11:00:00+00:00",
+      latest_generated_at: "2026-04-23T11:04:00+00:00",
+      latest_reviewed_at: null,
+      providers: ["heuristic"],
+      models: [],
+      has_reviewed_items: false,
+    },
+  ];
 }

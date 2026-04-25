@@ -138,6 +138,10 @@ def build_parser() -> argparse.ArgumentParser:
     review_show = review_subparsers.add_parser("show", help="Show a review payload for a capture.")
     review_show.add_argument("--capture-id", required=True)
     review_show.add_argument("--format", choices=("json", "markdown"), default="json")
+    review_recent = review_subparsers.add_parser(
+        "recent", help="List recent captures with review metadata."
+    )
+    review_recent.add_argument("--limit", type=int, default=12)
     review_update = review_subparsers.add_parser(
         "update-item", help="Save review state for an extracted item."
     )
@@ -564,6 +568,13 @@ def run_review_show(capture_id: str, export_format: str) -> int:
     return 1
 
 
+def run_review_recent(limit: int) -> int:
+    service = _get_export_service()
+    payload = service.list_recent_captures(limit=limit)
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
 def run_review_update_item(
     *,
     item_type: str,
@@ -651,6 +662,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_llm_check()
     if args.command == "review" and args.review_command == "show":
         return run_review_show(args.capture_id, args.format)
+    if args.command == "review" and args.review_command == "recent":
+        return run_review_recent(args.limit)
     if args.command == "review" and args.review_command == "update-item":
         return run_review_update_item(
             item_type=args.item_type,

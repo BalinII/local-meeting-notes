@@ -347,6 +347,76 @@ def fetch_follow_ups_for_capture(connection: sqlite3.Connection, capture_id: str
     ).fetchall()
 
 
+def fetch_recent_capture_activity(
+    connection: sqlite3.Connection, limit: int = 12
+) -> list[sqlite3.Row]:
+    safe_limit = max(1, min(int(limit), 100))
+    return connection.execute(
+        """
+        WITH capture_events AS (
+            SELECT
+                capture_id,
+                generated_at,
+                provider_name,
+                model_name,
+                NULL AS reviewed_at,
+                'generated' AS review_status
+            FROM summaries
+            WHERE capture_id <> ''
+            UNION ALL
+            SELECT
+                capture_id,
+                generated_at,
+                provider_name,
+                model_name,
+                reviewed_at,
+                COALESCE(review_status, 'generated') AS review_status
+            FROM actions
+            WHERE capture_id <> ''
+            UNION ALL
+            SELECT
+                capture_id,
+                generated_at,
+                provider_name,
+                model_name,
+                reviewed_at,
+                COALESCE(review_status, 'generated') AS review_status
+            FROM decisions
+            WHERE capture_id <> ''
+            UNION ALL
+            SELECT
+                capture_id,
+                generated_at,
+                provider_name,
+                model_name,
+                reviewed_at,
+                COALESCE(review_status, 'generated') AS review_status
+            FROM follow_ups
+            WHERE capture_id <> ''
+        )
+        SELECT
+            capture_id,
+            MIN(generated_at) AS first_generated_at,
+            MAX(generated_at) AS latest_generated_at,
+            MAX(reviewed_at) AS latest_reviewed_at,
+            GROUP_CONCAT(DISTINCT provider_name) AS providers,
+            GROUP_CONCAT(DISTINCT model_name) AS models,
+            MAX(
+                CASE
+                    WHEN review_status IN ('accepted', 'edited', 'rejected') OR reviewed_at IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS has_reviewed_items
+        FROM capture_events
+        GROUP BY capture_id
+        ORDER BY COALESCE(MAX(generated_at), MAX(reviewed_at)) DESC, capture_id DESC
+        LIMIT ?
+        """,
+        (safe_limit,),
+    ).fetchall()
+
+
 def update_extracted_item_review(
     connection: sqlite3.Connection,
     *,

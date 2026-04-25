@@ -102,6 +102,51 @@ textarea {
   margin-top: 10px;
 }
 
+.capture-picker {
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 14px;
+}
+
+.capture-picker-header {
+  margin-bottom: 10px;
+}
+
+.capture-list {
+  display: grid;
+  gap: 8px;
+}
+
+.capture-row {
+  text-align: left;
+  border: 1px solid rgba(23, 32, 51, 0.1);
+  background: #ffffff;
+  border-radius: 14px;
+  color: #1b2740;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.capture-row.active {
+  border-color: #3f83cc;
+  box-shadow: 0 0 0 2px rgba(63, 131, 204, 0.16);
+}
+
+.capture-row-title {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.capture-row-meta {
+  margin: 0;
+  color: #5f6f86;
+  font-size: 0.9rem;
+}
+
 .status-line,
 .muted {
   color: #667388;
