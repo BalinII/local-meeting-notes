@@ -13,7 +13,6 @@ from ..config import AppConfig
 from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
     fetch_meeting_by_capture_id,
-    fetch_recent_meetings,
     fetch_actions_for_capture,
     fetch_decisions_for_capture,
     fetch_follow_ups_for_capture,
@@ -156,31 +155,6 @@ class ExportService:
         if row is None:
             raise ValueError(f"No {item_type} found with id {item_id}.")
         return _with_review_fields(dict(row), item_type)
-
-    def list_recent_captures(self, limit: int = 20) -> list[dict[str, Any]]:
-        bootstrap_database(self.config)
-        with connection_context(self.config.database_path) as connection:
-            rows = [dict(row) for row in fetch_recent_meetings(connection, limit=limit)]
-
-        captures: list[dict[str, Any]] = []
-        for row in rows:
-            capture_id = str(row["capture_id"])
-            payload = self.build_review_payload(capture_id)
-            model_names = _provider_model_names(payload)
-            captures.append(
-                {
-                    "capture_id": capture_id,
-                    "display_name": row.get("title") or capture_id,
-                    "lifecycle_state": row.get("status"),
-                    "updated_at": row.get("updated_at"),
-                    "has_reviewed_items": bool(row.get("has_reviewed_items")),
-                    "latest_generated_at": payload["metadata"].get("latest_generated_at"),
-                    "latest_reviewed_at": row.get("reviewed_at"),
-                    "providers": payload["metadata"]["providers"],
-                    "models": model_names,
-                }
-            )
-        return captures
 
     def render_export(self, capture_id: str, export_format: str) -> str:
         payload = self.build_review_payload(capture_id)
@@ -407,6 +381,70 @@ def _split_csv_values(value: Any) -> list[str]:
     if not value or not isinstance(value, str):
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _display_name(payload: dict[str, Any]) -> str:
+    metadata = payload.get("metadata", {})
+    display_name = _clean_review_text(metadata.get("display_name")) if isinstance(metadata, dict) else None
+    if display_name:
+        return display_name
+    capture_id = str(payload["capture_id"])
+    words = [segment for segment in re.split(r"[-_]+", capture_id) if segment]
+    pretty_capture_id = " ".join(word.capitalize() for word in words) if words else capture_id
+    return f"Meeting Notes - {pretty_capture_id}"
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().casefold()).strip("-")
+    return slug or "meeting-notes"
+
+
+def _provider_model_names(payload: dict[str, Any]) -> list[str]:
+    names = sorted(
+        {
+            str(item["model_name"])
+            for collection_name in (
+                "summaries",
+                "actions",
+                "decisions",
+                "follow_ups",
+                "blockers_risks",
+                "open_questions",
+            )
+            for item in payload.get(collection_name, [])
+            if item.get("model_name")
+        }
+    )
+    return names
+
+
+def _split_evidence_lines(value: str) -> list[str]:
+    lines = [line.strip().lstrip("-").strip() for line in value.splitlines() if line.strip()]
+    return lines or [value.strip()]
+
+
+def _review_status_label(item: dict[str, Any]) -> str:
+    status = str(item.get("review_status") or "generated")
+    return f"Review status: {status}"
+
+
+def _uncertainty_note(item: dict[str, Any]) -> str | None:
+    evidence = str(item.get("evidence_snippet") or "").lower()
+    owner = _owner_label(item)
+    notes: list[str] = []
+    if "unknown" in owner.casefold() or "unconfirmed" in owner.casefold():
+        notes.append("Owner is not confirmed.")
+    if "weak evidence" in evidence:
+        notes.append("Evidence may be weak.")
+    return " ".join(notes) if notes else None
+
+
+def _build_export_filename(*, payload: dict[str, Any], extension: str) -> str:
+    exported_date = str(payload.get("exported_at") or "").split("T")[0]
+    if not exported_date:
+        exported_date = datetime.now(timezone.utc).date().isoformat()
+    display_part = _slugify(_display_name(payload))
+    return f"{display_part}-{exported_date}.{extension}"
 
 
 def _markdown_items(

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from local_meeting_notes.action_extractor.service import ActionExtractorService
 from local_meeting_notes.config import load_config
+from local_meeting_notes.export_service.service import ExportService
 from local_meeting_notes.summarizer.service import SummarizerService
 from local_meeting_notes.transcription_engine.providers import TranscriptionResult
 from local_meeting_notes.transcription_engine.service import TranscriptionEngineService
@@ -82,3 +83,30 @@ def test_summary_and_action_services_persist_outputs(local_tmp_dir) -> None:
     assert outputs["follow_ups"][0]["follow_up_type"] in {"follow_up", "blocker_risk", "open_question"}
     assert all(row["provider_name"] == "heuristic" for row in summary_rows)
     assert all(item["provider_name"] == "heuristic" for item in outputs["actions"])
+
+
+def test_action_extraction_blocks_rerun_when_reviewed_items_exist(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    capture_dir = config.audio_output_dir / "capture-reviewed" / "microphone"
+    _write_wav(capture_dir / "chunk_001.wav")
+    _write_wav(capture_dir / "chunk_002.wav")
+
+    transcription = TranscriptionEngineService(config, provider=FakeTranscriptProvider())
+    transcription.transcribe_capture("capture-reviewed")
+
+    extractor = ActionExtractorService(config)
+    extractor.extract_capture("capture-reviewed")
+    payload = ExportService(config).build_review_payload("capture-reviewed")
+    action_id = payload["actions"][0]["id"]
+    ExportService(config).review_item(
+        item_type="action",
+        item_id=action_id,
+        review_status="accepted",
+    )
+
+    try:
+        extractor.extract_capture("capture-reviewed")
+    except RuntimeError as exc:
+        assert "reviewed items exist" in str(exc)
+    else:
+        raise AssertionError("Re-extraction should not erase reviewed output")

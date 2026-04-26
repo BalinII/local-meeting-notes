@@ -8,7 +8,7 @@ It is **not production-ready**.
 
 ## What is reasonably ready for internal demo use
 
-- Local capture to filesystem artifacts.
+- Local capture to filesystem artifacts, with device-dependent reliability limits.
 - Offline transcription and generic diarization flow.
 - Summary and extracted outcomes generation.
 - Review/edit/accept/reject workflow for extracted items.
@@ -21,6 +21,7 @@ It is **not production-ready**.
 - No production Microsoft/Outlook/Teams integration.
 - No guarantee of stable quality across all hardware/audio setups.
 - Limited operational hardening and observability expected from production systems.
+- Parallel microphone plus loopback processing is currently constrained: captured files can exist, but transcription expects one source timeline until mixing/alignment is implemented.
 
 ## Biggest known limitations
 
@@ -29,6 +30,7 @@ It is **not production-ready**.
 3. Diarization is heuristic and can mis-assign speaker turns.
 4. Local LLM quality depends on model/runtime health and prompt-fit.
 5. Human review remains required for high-trust outputs.
+6. Re-running extraction after review is blocked to avoid erasing accepted/edited/rejected work.
 
 ## Fallback behavior
 

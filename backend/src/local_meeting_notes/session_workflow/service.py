@@ -178,11 +178,16 @@ class SessionWorkflowService:
 
     def pause_session(self, capture_id: str) -> dict[str, object]:
         bootstrap_database(self.config)
-        stopped_state = self.audio_capture.stop_capture()
         now = _utc_now()
         with connection_context(self.config.database_path) as connection:
             row = self._require_session(connection, capture_id)
             self._assert_transition(str(row["status"]), "paused")
+        active_capture = self.audio_capture.status()
+        if active_capture.get("capture_id") != capture_id:
+            raise ValueError(f"Active audio capture does not match session '{capture_id}'.")
+        stopped_state = self.audio_capture.stop_capture()
+        with connection_context(self.config.database_path) as connection:
+            row = self._require_session(connection, capture_id)
             update_meeting_fields(
                 connection,
                 capture_id,

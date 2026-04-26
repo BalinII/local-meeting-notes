@@ -56,6 +56,17 @@ class ActionExtractorService:
             if not transcript_rows:
                 raise RuntimeError(f"No transcript segments found for capture '{capture_id}'.")
 
+            existing_outputs = [
+                *[dict(row) for row in fetch_actions_for_capture(connection, capture_id)],
+                *[dict(row) for row in fetch_decisions_for_capture(connection, capture_id)],
+                *[dict(row) for row in fetch_follow_ups_for_capture(connection, capture_id)],
+            ]
+            if _has_reviewed_outputs(existing_outputs):
+                raise RuntimeError(
+                    "Cannot re-extract outcomes because reviewed items exist for this capture. "
+                    "Export or reset review state before reprocessing."
+                )
+
             delete_actions_for_capture(connection, capture_id)
             delete_decisions_for_capture(connection, capture_id)
             delete_follow_ups_for_capture(connection, capture_id)
@@ -156,3 +167,11 @@ class ActionExtractorService:
             "decisions": [dict(row) for row in decisions],
             "follow_ups": [dict(row) for row in follow_ups],
         }
+
+
+def _has_reviewed_outputs(items: list[dict[str, object]]) -> bool:
+    return any(
+        item.get("reviewed_at")
+        or str(item.get("review_status") or "generated") in {"accepted", "edited", "rejected"}
+        for item in items
+    )

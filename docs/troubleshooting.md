@@ -202,10 +202,12 @@ Then:
 - capture loads but review content appears empty
 - edits not visible in exports
 - markdown/html export missing expected rows
+- extraction re-run refuses to proceed after review
 
 ### Checks
 
 ```powershell
+python -m local_meeting_notes.app review recent --limit 12
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
 ```
@@ -215,10 +217,28 @@ Interpretation tips:
 - rejected items are intentionally omitted from markdown/html exports
 - reviewed text overrides generated text when present
 - empty output can mean extraction produced weak/filtered results
+- once accepted/edited/rejected review state exists, extraction re-runs are blocked to avoid erasing user review work
 
 ---
 
-## 9) Common Windows-specific gotchas
+## 9) Parallel mic + system audio processing limit
+
+### Symptom
+
+- transcription fails with a message about multiple parallel audio sources
+
+### Why this happens
+
+The prototype can capture microphone and loopback into separate source folders, but the processing pipeline does not yet mix or align those parallel timelines safely. Serializing both sources as one transcript would produce misleading timestamps and duplicated meeting content.
+
+### Current safe workaround
+
+- record or process a single source timeline for transcription
+- keep dual-source capture for validation only until source mixing/alignment is implemented
+
+---
+
+## 10) Common Windows-specific gotchas
 
 - PowerShell execution policy blocks venv activation scripts.
 - Long path or permission quirks when running from protected directories.
@@ -235,7 +255,7 @@ Recommended habits:
 
 ---
 
-## 10) Quick health check commands
+## 11) Quick health check commands
 
 Run these before demos:
 

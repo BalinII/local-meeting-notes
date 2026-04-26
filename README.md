@@ -61,6 +61,12 @@ Phase 8 adds a lightweight human review workflow:
 - reviewed state is stored locally in SQLite beside the generated output
 - exports prefer reviewed text and omit rejected extracted items from Markdown and HTML
 
+Current stabilization notes:
+- The desktop UI is currently a review/export workspace for persisted captures, not a full recording-control dashboard.
+- Session recording commands exist in the backend CLI and Tauri command layer, but capture reliability remains a validation focus.
+- Reviewed extracted items are protected from destructive re-extraction; re-run extraction only before human review or after intentionally resetting review state.
+- Mic and loopback audio are captured as separate source files. Transcription currently expects one source timeline and will reject parallel mic+loopback captures until source mixing/alignment is implemented.
+
 No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
 
 ## Phase 1 Repo Structure
@@ -202,6 +208,7 @@ python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
 python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
 python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
 python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
+python -m local_meeting_notes.app review recent --limit 12
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app review update-item --item-type action --item-id 1 --review-status edited --description "Reviewed action text"
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown

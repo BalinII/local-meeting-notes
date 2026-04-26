@@ -51,6 +51,12 @@ class TranscriptionEngineService:
     def discover_chunks(self, capture_id: str) -> list[AudioChunk]:
         capture_dir = self.config.audio_output_dir / capture_id
         chunk_paths = sorted(capture_dir.rglob("*.wav"), key=_chunk_sort_key)
+        source_names = _source_names_for_chunks(capture_dir, chunk_paths)
+        if len(source_names) > 1:
+            raise RuntimeError(
+                "Multiple parallel audio sources were found for this capture. "
+                "Current transcription expects one source timeline; process microphone-only or loopback-only captures until source mixing is implemented."
+            )
         chunks: list[AudioChunk] = []
         offset = 0
         for chunk_path in chunk_paths:
@@ -179,3 +185,18 @@ def _chunk_sort_key(path: Path) -> tuple[int, str]:
     if prefix.isdigit():
         return (int(prefix), path.name)
     return (10**9, path.name)
+
+
+def _source_names_for_chunks(capture_dir: Path, chunk_paths: list[Path]) -> set[str]:
+    source_names: set[str] = set()
+    for chunk_path in chunk_paths:
+        try:
+            relative = chunk_path.relative_to(capture_dir)
+        except ValueError:
+            source_names.add("unknown")
+            continue
+        if len(relative.parts) > 1:
+            source_names.add(relative.parts[0])
+        else:
+            source_names.add("capture")
+    return source_names

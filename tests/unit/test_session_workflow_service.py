@@ -177,6 +177,34 @@ def test_session_cleanup_deletes_expired_audio_only(local_tmp_dir) -> None:
     assert not audio_dir.exists()
 
 
+def test_pause_wrong_capture_does_not_stop_active_capture(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    audio = FakeAudioCaptureService()
+    service = SessionWorkflowService(
+        config,
+        audio_capture=audio,  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    active = service.create_session("Active")
+    stale = service.create_session("Stale")
+    service.start_session(active["capture_id"])
+
+    try:
+        service.pause_session(stale["capture_id"])
+    except ValueError as exc:
+        assert "Cannot move session" in str(exc) or "Active audio capture" in str(exc)
+    else:
+        raise AssertionError("pause_session should reject a stale capture id")
+
+    assert audio.current["status"] == "running"
+    assert audio.current["capture_id"] == active["capture_id"]
+
+
 def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     bootstrap_database(config)

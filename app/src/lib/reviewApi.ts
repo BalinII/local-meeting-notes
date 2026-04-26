@@ -34,9 +34,11 @@ export type ReviewPayload = {
   capture_id: string;
   exported_at: string;
   metadata: {
+    display_name?: string | null;
     providers: string[];
     latest_generated_at?: string | null;
     summary_count: number;
+    persisted_summary_count?: number;
     action_count: number;
     decision_count: number;
     follow_up_count: number;
@@ -47,6 +49,16 @@ export type ReviewPayload = {
   follow_ups: ExtractedOutput[];
   blockers_risks: ExtractedOutput[];
   open_questions: ExtractedOutput[];
+};
+
+export type RecentCapture = {
+  capture_id: string;
+  created_at?: string | null;
+  latest_generated_at?: string | null;
+  latest_reviewed_at?: string | null;
+  providers: string[];
+  models: string[];
+  has_reviewed_items: boolean;
 };
 
 type TauriGlobal = {
@@ -69,69 +81,30 @@ export async function loadReviewPayload(captureId: string): Promise<ReviewPayloa
   return invoke<ReviewPayload>("review_capture", { captureId });
 }
 
+export async function listRecentCaptures(limit = 12): Promise<RecentCapture[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return [
+      {
+        capture_id: "capture-demo-001",
+        created_at: new Date().toISOString(),
+        latest_generated_at: new Date().toISOString(),
+        latest_reviewed_at: null,
+        providers: ["local_llm"],
+        models: ["llama3.1:8b"],
+        has_reviewed_items: true,
+      },
+    ];
+  }
+  return invoke<RecentCapture[]>("list_recent_captures", { limit });
+}
+
 export async function exportReview(captureId: string, format: "markdown" | "html" | "json") {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) {
     return `Demo mode: export ${format} for ${captureId}`;
   }
   return invoke<string>("export_capture", { captureId, format });
-}
-
-export async function updateKeepSourceAudio(captureId: string, enabled: boolean) {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return { ...demoDashboard().sessions[0], capture_id: captureId, keep_source_audio: enabled };
-  }
-  return invoke<SessionOverview>("set_keep_source_audio", { captureId, enabled });
-}
-
-export async function deleteSourceAudio(captureId: string) {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return {
-      ...demoDashboard().sessions[0],
-      capture_id: captureId,
-      keep_source_audio: false,
-      audio_present: false,
-      source_audio_deleted_at: new Date().toISOString(),
-    };
-  }
-  return invoke<SessionOverview>("delete_source_audio", { captureId });
-}
-
-export async function archiveSession(captureId: string) {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return { ...demoDashboard().sessions[0], capture_id: captureId, lifecycle_state: "archived" as const };
-  }
-  return invoke<SessionOverview>("archive_session", { captureId });
-}
-
-export async function loadRetentionSettings(): Promise<RetentionSettings> {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return demoDashboard().settings;
-  }
-  return invoke<RetentionSettings>("load_retention_settings");
-}
-
-export async function saveRetentionSettings(rawAudioRetentionDays: number, deleteTempProcessingFiles: boolean) {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return { raw_audio_retention_days: rawAudioRetentionDays, delete_temp_processing_files: deleteTempProcessingFiles };
-  }
-  return invoke<RetentionSettings>("save_retention_settings", {
-    rawAudioRetentionDays,
-    deleteTempProcessingFiles,
-  });
-}
-
-export async function runRetentionCleanup() {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return { deleted_audio_sessions: 0, deleted_temp_files: 1, ran_at: new Date().toISOString() };
-  }
-  return invoke<{ deleted_audio_sessions: number; deleted_temp_files: number; ran_at: string }>("cleanup_retention");
 }
 
 export async function saveReviewItem(input: {
@@ -163,12 +136,14 @@ export async function saveReviewItem(input: {
 
 function demoPayload(captureId: string): ReviewPayload {
   return {
-    capture_id: captureId || "demo-capture",
+    capture_id: captureId || "capture-demo-001",
     exported_at: new Date().toISOString(),
     metadata: {
+      display_name: "Demo Capture",
       providers: ["local_llm"],
       latest_generated_at: new Date().toISOString(),
       summary_count: 2,
+      persisted_summary_count: 2,
       action_count: 1,
       decision_count: 1,
       follow_up_count: 2,

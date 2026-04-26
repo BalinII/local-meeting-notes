@@ -178,12 +178,15 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     html = service.render_export("capture-export", "html")
     payload = json.loads(service.render_export("capture-export", "json"))
 
-    assert "# Meeting Notes: capture-export" in markdown
+    assert "# Capture Export" in markdown
+    assert "## Executive Summary" in markdown
     assert "## Actions" in markdown
-    assert markdown.count("### Detailed Summary") == 1
-    assert "Evidence:" in markdown
-    assert "<h1>Meeting Notes: capture-export</h1>" in html
-    assert html.count("<h3>Detailed Summary</h3>") == 1
+    assert markdown.count("## Detailed Summary") == 1
+    assert "Evidence snippets" in markdown
+    assert "<h1>Capture Export</h1>" in html
+    assert html.count("<h2>Detailed Summary</h2>") == 1
+    assert "Review status: generated" in html
+    assert "<nav>" in html
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
 
