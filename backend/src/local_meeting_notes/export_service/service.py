@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import html
 import json
-from datetime import UTC, datetime
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -141,38 +142,50 @@ class ExportService:
 
     def render_export(self, capture_id: str, export_format: str) -> str:
         payload = self.build_review_payload(capture_id)
-        if export_format == "json":
-            return json.dumps(payload, indent=2, ensure_ascii=False)
-        if export_format == "markdown":
-            return render_markdown(payload)
-        if export_format == "html":
-            return render_html(payload)
-        raise ValueError(f"Unsupported export format: {export_format}")
+        return _render_payload(payload=payload, export_format=export_format)
 
     def export_capture(self, capture_id: str, export_format: str) -> Path:
         if export_format not in EXPORT_FORMATS:
             raise ValueError(f"Unsupported export format: {export_format}")
-        content = self.render_export(capture_id, export_format)
+        payload = self.build_review_payload(capture_id)
+        content = _render_payload(payload=payload, export_format=export_format)
         extension = "md" if export_format == "markdown" else export_format
         output_dir = self.config.export_output_dir / capture_id
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"meeting-notes.{extension}"
+        output_path = output_dir / _build_export_filename(payload=payload, extension=extension)
         output_path.write_text(content, encoding="utf-8")
         return output_path
 
 
+def _render_payload(*, payload: dict[str, Any], export_format: str) -> str:
+    if export_format == "json":
+        return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+    if export_format == "markdown":
+        return render_markdown(payload)
+    if export_format == "html":
+        return render_html(payload)
+    raise ValueError(f"Unsupported export format: {export_format}")
+
+
 def render_markdown(payload: dict[str, Any]) -> str:
+    display_name = _display_name(payload)
     lines = [
-        f"# Meeting Notes: {payload['capture_id']}",
+        f"# {display_name}",
         "",
+        "## Metadata",
+        "",
+        f"- Capture ID: `{payload['capture_id']}`",
         f"- Exported: {payload['exported_at']}",
         f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
     ]
+    model_names = _provider_model_names(payload)
+    if model_names:
+        lines.append(f"- Models: {', '.join(model_names)}")
     if payload["metadata"].get("latest_generated_at"):
         lines.append(f"- Latest generated: {payload['metadata']['latest_generated_at']}")
     lines.append("")
 
-    lines.extend(_markdown_summaries(payload["summaries"]))
+    lines.extend(_markdown_summaries(payload))
     lines.extend(_markdown_items("Actions", payload["actions"], include_owner=True))
     lines.extend(_markdown_items("Decisions", payload["decisions"]))
     lines.extend(_markdown_items("Follow-ups", payload["follow_ups"], include_owner=True))
@@ -182,13 +195,17 @@ def render_markdown(payload: dict[str, Any]) -> str:
 
 
 def render_html(payload: dict[str, Any]) -> str:
+    display_name = _display_name(payload)
     body = [
-        f"<h1>Meeting Notes: {html.escape(payload['capture_id'])}</h1>",
-        "<section class=\"metadata\">",
+        f"<h1>{html.escape(display_name)}</h1>",
+        f"<p class=\"capture-id\"><strong>Capture ID:</strong> <code>{html.escape(payload['capture_id'])}</code></p>",
+        "<nav><a href=\"#executive-summary\">Executive Summary</a><a href=\"#detailed-summary\">Detailed Summary</a><a href=\"#actions\">Actions</a><a href=\"#decisions\">Decisions</a><a href=\"#follow-ups\">Follow-ups</a><a href=\"#blockers-risks\">Blockers / Risks</a><a href=\"#open-questions\">Open Questions</a></nav>",
+        "<section class=\"metadata\" id=\"metadata\">",
         f"<p><strong>Exported:</strong> {html.escape(payload['exported_at'])}</p>",
         f"<p><strong>Providers:</strong> {html.escape(', '.join(payload['metadata']['providers']) or 'Unknown')}</p>",
+        f"<p><strong>Models:</strong> {html.escape(', '.join(_provider_model_names(payload)) or 'Unknown')}</p>",
         "</section>",
-        _html_summaries(payload["summaries"]),
+        _html_summaries(payload),
         _html_items("Actions", payload["actions"], include_owner=True),
         _html_items("Decisions", payload["decisions"]),
         _html_items("Follow-ups", payload["follow_ups"], include_owner=True),
@@ -199,13 +216,27 @@ def render_html(payload: dict[str, Any]) -> str:
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Meeting Notes: {html.escape(payload['capture_id'])}</title>
+  <title>{html.escape(display_name)}</title>
   <style>
-    body {{ font-family: Segoe UI, sans-serif; margin: 40px; color: #182033; line-height: 1.55; }}
-    section {{ margin: 28px 0; }}
+    body {{ font-family: Segoe UI, sans-serif; margin: 36px auto; max-width: 980px; color: #182033; line-height: 1.55; padding: 0 18px; }}
+    nav {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0 20px; }}
+    nav a {{ color: #2455a6; text-decoration: none; font-size: 0.95rem; }}
+    nav a:hover {{ text-decoration: underline; }}
+    section {{ margin: 24px 0; border-top: 1px solid #e2e8f0; padding-top: 18px; }}
     article, li {{ margin-bottom: 14px; }}
+    .capture-id {{ color: #516178; margin-top: -6px; }}
     .badge {{ display: inline-block; padding: 2px 8px; border-radius: 999px; background: #edf2f7; font-size: 12px; }}
-    .evidence {{ color: #5b6678; font-size: 0.92em; white-space: pre-line; }}
+    .reviewed {{ background: #def7ec; color: #03543f; }}
+    .edited {{ background: #e5edff; color: #1e429f; }}
+    .uncertain {{ background: #fff8e1; border-left: 3px solid #f7c948; padding: 8px 10px; color: #744210; font-size: 0.92em; }}
+    .evidence {{ color: #5b6678; font-size: 0.92em; white-space: pre-line; margin-top: 8px; }}
+    .summary-content {{ white-space: pre-line; }}
+    @media print {{
+      body {{ margin: 16px; max-width: none; color: #000; }}
+      nav {{ display: none; }}
+      section {{ break-inside: avoid; page-break-inside: avoid; }}
+      a {{ color: #000; }}
+    }}
   </style>
 </head>
 <body>
@@ -215,24 +246,30 @@ def render_html(payload: dict[str, Any]) -> str:
 """
 
 
-def _markdown_summaries(summaries: list[dict[str, Any]]) -> list[str]:
-    lines = ["## Summaries", ""]
+def _markdown_summaries(payload: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    summaries = payload["summaries"]
     if not summaries:
-        return lines + ["No summaries found.", ""]
+        return ["## Executive Summary", "", "No summary found.", "", "## Detailed Summary", "", "No summary found.", ""]
     for summary in summaries:
+        section_title = str(summary["title"])
         lines.extend(
             [
-                f"### {summary['title']}",
+                f"## {section_title}",
                 "",
                 str(summary["content"]),
                 "",
-                _metadata_line(summary),
+                f"_ {_metadata_line(summary)}",
             ]
         )
         if summary.get("evidence_snippet"):
-            evidence_lines = str(summary["evidence_snippet"]).splitlines()
-            lines.append("> Evidence:")
-            lines.extend(f"> {line}" for line in evidence_lines)
+            lines.append("")
+            lines.append("<details><summary>Evidence snippets</summary>")
+            lines.append("")
+            evidence_lines = _split_evidence_lines(str(summary["evidence_snippet"]))
+            lines.extend(f"- {line}" for line in evidence_lines)
+            lines.append("")
+            lines.append("</details>")
             lines.append("")
     return lines
 
@@ -340,50 +377,75 @@ def _markdown_items(
     for item in exportable_items:
         owner = f" [{_owner_label(item)}]" if include_owner else ""
         lines.append(f"- {_effective_description(item)}{owner}")
+        lines.append(f"  - Status: {_review_status_label(item)}")
         if item.get("start_offset_seconds") is not None:
             lines.append(f"  - Time: {item['start_offset_seconds']}-{item['end_offset_seconds']}s")
         lines.append(f"  - {_metadata_line(item)}")
+        uncertainty = _uncertainty_note(item)
+        if uncertainty:
+            lines.append(f"  - Uncertainty: {uncertainty}")
         if item.get("evidence_snippet"):
-            lines.append(f"  - Evidence: {item['evidence_snippet']}")
+            lines.append("  - Evidence:")
+            for evidence_line in _split_evidence_lines(str(item["evidence_snippet"])):
+                lines.append(f"    - {evidence_line}")
     lines.append("")
     return lines
 
 
-def _html_summaries(summaries: list[dict[str, Any]]) -> str:
+def _html_summaries(payload: dict[str, Any]) -> str:
+    summaries = payload["summaries"]
     if not summaries:
-        return "<section><h2>Summaries</h2><p>No summaries found.</p></section>"
+        return "<section id=\"executive-summary\"><h2>Executive Summary</h2><p>No summary found.</p></section><section id=\"detailed-summary\"><h2>Detailed Summary</h2><p>No summary found.</p></section>"
     articles = []
     for summary in summaries:
+        summary_title = str(summary["title"])
+        section_id = _slugify(summary_title)
         evidence = _html_evidence(summary)
         articles.append(
-            f"<article><h3>{html.escape(str(summary['title']))}</h3>"
-            f"<p>{html.escape(str(summary['content']))}</p>"
-            f"<p class=\"badge\">{html.escape(_metadata_line(summary))}</p>{evidence}</article>"
+            f"<section id=\"{html.escape(section_id)}\"><h2>{html.escape(summary_title)}</h2>"
+            f"<article><p class=\"summary-content\">{html.escape(str(summary['content']))}</p>"
+            f"<p class=\"badge\">{html.escape(_metadata_line(summary))}</p>{evidence}</article></section>"
         )
-    return f"<section><h2>Summaries</h2>{''.join(articles)}</section>"
+    return "".join(articles)
 
 
 def _html_items(title: str, items: list[dict[str, Any]], *, include_owner: bool = False) -> str:
+    section_id = _slugify(title)
     exportable_items = _exportable_items(items)
     if not exportable_items:
-        return f"<section><h2>{html.escape(title)}</h2><p>No {html.escape(title.lower())} found.</p></section>"
+        return f"<section id=\"{html.escape(section_id)}\"><h2>{html.escape(title)}</h2><p>No {html.escape(title.lower())} found.</p></section>"
     rows = []
     for item in exportable_items:
         owner = f" <span class=\"badge\">{html.escape(_owner_label(item))}</span>" if include_owner else ""
+        status_class = "badge"
+        if item.get("review_status") == "accepted":
+            status_class = "badge reviewed"
+        elif item.get("review_status") == "edited":
+            status_class = "badge edited"
         timing = ""
         if item.get("start_offset_seconds") is not None:
             timing = f"<p class=\"evidence\">Time: {item['start_offset_seconds']}-{item['end_offset_seconds']}s</p>"
+        uncertainty = _uncertainty_note(item)
+        uncertainty_block = (
+            f"<p class=\"uncertain\"><strong>Uncertainty:</strong> {html.escape(uncertainty)}</p>"
+            if uncertainty
+            else ""
+        )
         rows.append(
             f"<li><strong>{html.escape(_effective_description(item))}</strong>{owner}"
-            f"{timing}<p class=\"badge\">{html.escape(_metadata_line(item))}</p>{_html_evidence(item)}</li>"
+            f"<p class=\"{status_class}\">{html.escape(_review_status_label(item))}</p>"
+            f"{timing}<p class=\"badge\">{html.escape(_metadata_line(item))}</p>{uncertainty_block}{_html_evidence(item)}</li>"
         )
-    return f"<section><h2>{html.escape(title)}</h2><ul>{''.join(rows)}</ul></section>"
+    return f"<section id=\"{html.escape(section_id)}\"><h2>{html.escape(title)}</h2><ul>{''.join(rows)}</ul></section>"
 
 
 def _html_evidence(item: dict[str, Any]) -> str:
     if not item.get("evidence_snippet"):
         return ""
-    return f"<p class=\"evidence\">Evidence: {html.escape(str(item['evidence_snippet']))}</p>"
+    evidence_rows = "".join(
+        f"<li>{html.escape(line)}</li>" for line in _split_evidence_lines(str(item["evidence_snippet"]))
+    )
+    return f"<details><summary>Evidence snippets</summary><ul class=\"evidence\">{evidence_rows}</ul></details>"
 
 
 def _metadata_line(item: dict[str, Any]) -> str:
@@ -397,6 +459,63 @@ def _owner_label(item: dict[str, Any]) -> str:
     if owner in {"Unknown", "Unconfirmed speaker"}:
         return f"{owner} - review ownership"
     return str(owner)
+
+
+def _split_evidence_lines(value: str) -> list[str]:
+    lines = [line.strip().lstrip("-").strip() for line in value.splitlines() if line.strip()]
+    return lines or [value.strip()]
+
+
+def _review_status_label(item: dict[str, Any]) -> str:
+    status = str(item.get("review_status") or "generated")
+    return f"Review status: {status}"
+
+
+def _uncertainty_note(item: dict[str, Any]) -> str | None:
+    evidence = str(item.get("evidence_snippet") or "").lower()
+    owner = _owner_label(item)
+    notes: list[str] = []
+    if "unknown" in owner.casefold() or "unconfirmed" in owner.casefold():
+        notes.append("Owner is not confirmed.")
+    if "weak evidence" in evidence:
+        notes.append("Evidence may be weak.")
+    if not notes:
+        return None
+    return " ".join(notes)
+
+
+def _display_name(payload: dict[str, Any]) -> str:
+    capture_id = str(payload["capture_id"])
+    words = [segment for segment in re.split(r"[-_]+", capture_id) if segment]
+    pretty_capture_id = " ".join(word.capitalize() for word in words) if words else capture_id
+    return f"Meeting Notes — {pretty_capture_id}"
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().casefold()).strip("-")
+    return slug or "section"
+
+
+def _provider_model_names(payload: dict[str, Any]) -> list[str]:
+    names = sorted(
+        {
+            str(item["model_name"])
+            for collection_name in ("summaries", "actions", "decisions", "follow_ups", "blockers_risks", "open_questions")
+            for item in payload.get(collection_name, [])
+            if item.get("model_name")
+        }
+    )
+    return names
+
+
+def _build_export_filename(*, payload: dict[str, Any], extension: str) -> str:
+    exported_date = str(payload.get("exported_at") or "").split("T")[0]
+    if not exported_date:
+        exported_date = datetime.now(timezone.utc).date().isoformat()
+    display_part = _slugify(_display_name(payload).replace("Meeting Notes", "").strip(" —"))
+    if not display_part:
+        display_part = _slugify(str(payload["capture_id"]))
+    return f"{display_part}-{exported_date}.{extension}"
 
 
 def _with_review_fields(item: dict[str, Any], item_type: str) -> dict[str, Any]:
@@ -427,4 +546,4 @@ def _clean_review_text(value: object) -> str | None:
 
 
 def _now_timestamp() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()

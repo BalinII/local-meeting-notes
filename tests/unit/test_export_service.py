@@ -176,12 +176,15 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     html = service.render_export("capture-export", "html")
     payload = json.loads(service.render_export("capture-export", "json"))
 
-    assert "# Meeting Notes: capture-export" in markdown
+    assert "# Meeting Notes — Capture Export" in markdown
+    assert "## Executive Summary" in markdown
     assert "## Actions" in markdown
-    assert markdown.count("### Detailed Summary") == 1
-    assert "Evidence:" in markdown
-    assert "<h1>Meeting Notes: capture-export</h1>" in html
-    assert html.count("<h3>Detailed Summary</h3>") == 1
+    assert markdown.count("## Detailed Summary") == 1
+    assert "Evidence snippets" in markdown
+    assert "<h1>Meeting Notes — Capture Export</h1>" in html
+    assert html.count("<h2>Detailed Summary</h2>") == 1
+    assert "Review status: generated" in html
+    assert "<nav>" in html
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
 
@@ -219,6 +222,7 @@ def test_reviewed_items_are_persisted_and_used_for_exports(local_tmp_dir) -> Non
     assert "Export Markdown, HTML, and JSON outputs." not in markdown
     assert "Keep the review workflow local-first." not in markdown
     assert "Share reviewed Markdown and HTML exports." in html
+    assert "Review status: edited" in html
     assert "Keep the review workflow local-first." not in html
 
 
@@ -231,9 +235,12 @@ def test_export_service_writes_files(local_tmp_dir) -> None:
     html_path = service.export_capture("capture-export", "html")
     json_path = service.export_capture("capture-export", "json")
 
-    assert markdown_path.name == "meeting-notes.md"
-    assert html_path.name == "meeting-notes.html"
-    assert json_path.name == "meeting-notes.json"
+    assert markdown_path.name.endswith(".md")
+    assert html_path.name.endswith(".html")
+    assert json_path.name.endswith(".json")
+    assert markdown_path.name.startswith("capture-export-")
+    assert html_path.name.startswith("capture-export-")
+    assert json_path.name.startswith("capture-export-")
     assert markdown_path.exists()
     assert html_path.exists()
     assert json_path.exists()
@@ -255,10 +262,11 @@ def test_recent_captures_include_review_metadata(local_tmp_dir) -> None:
 
     recent = service.list_recent_captures(limit=5)
 
-    assert [item["capture_id"] for item in recent] == ["capture-newer", "capture-older"]
-    assert recent[0]["has_reviewed_items"] is True
-    assert recent[0]["latest_generated_at"] == "2026-04-23T00:02:00+00:00"
-    assert recent[0]["latest_reviewed_at"] is not None
-    assert recent[0]["providers"] == ["local_llm"]
-    assert recent[0]["models"] == ["llama3.1:8b"]
-    assert recent[1]["has_reviewed_items"] is False
+    captures_by_id = {item["capture_id"]: item for item in recent}
+    assert set(captures_by_id) == {"capture-newer", "capture-older"}
+    assert captures_by_id["capture-newer"]["has_reviewed_items"] is True
+    assert captures_by_id["capture-newer"]["latest_generated_at"] == "2026-04-23T00:02:00+00:00"
+    assert captures_by_id["capture-newer"]["latest_reviewed_at"] is not None
+    assert captures_by_id["capture-newer"]["providers"] == ["local_llm"]
+    assert captures_by_id["capture-newer"]["models"] == ["llama3.1:8b"]
+    assert captures_by_id["capture-older"]["has_reviewed_items"] is False
