@@ -50,7 +50,7 @@ class TranscriptionEngineService:
 
     def discover_chunks(self, capture_id: str) -> list[AudioChunk]:
         capture_dir = self.config.audio_output_dir / capture_id
-        chunk_paths = sorted(capture_dir.rglob("*.wav"))
+        chunk_paths = sorted(capture_dir.rglob("*.wav"), key=_chunk_sort_key)
         chunks: list[AudioChunk] = []
         offset = 0
         for chunk_path in chunk_paths:
@@ -171,3 +171,11 @@ class TranscriptionEngineService:
             }
             for row in rows
         ]
+
+
+def _chunk_sort_key(path: Path) -> tuple[int, str]:
+    stem = path.stem
+    prefix = stem.split("_", 1)[0]
+    if prefix.isdigit():
+        return (int(prefix), path.name)
+    return (10**9, path.name)

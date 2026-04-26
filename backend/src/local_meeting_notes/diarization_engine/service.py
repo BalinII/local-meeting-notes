@@ -47,7 +47,7 @@ class DiarizationEngineService:
 
     def discover_audio_files(self, capture_id: str) -> list[AudioChunkReference]:
         capture_dir = self.config.audio_output_dir / capture_id
-        chunk_paths = sorted(capture_dir.rglob("*.wav"))
+        chunk_paths = sorted(capture_dir.rglob("*.wav"), key=_chunk_sort_key)
         chunks: list[AudioChunkReference] = []
         offset = 0
         for chunk_path in chunk_paths:
@@ -175,3 +175,11 @@ class DiarizationEngineService:
             }
             for row in rows
         ]
+
+
+def _chunk_sort_key(path: Path) -> tuple[int, str]:
+    stem = path.stem
+    prefix = stem.split("_", 1)[0]
+    if prefix.isdigit():
+        return (int(prefix), path.name)
+    return (10**9, path.name)

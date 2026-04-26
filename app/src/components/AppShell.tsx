@@ -1,73 +1,70 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  archiveSession,
+  createRecordingSession,
+  deleteSourceAudio,
   exportReview,
   listRecentCaptures,
   loadReviewPayload,
+  loadSessionDashboard,
+  pauseSession,
+  renameSession,
+  resumeSession,
+  runRetentionCleanup,
+  saveRetentionSettings,
   saveReviewItem,
+  startSession,
+  stopSession,
+  updateKeepSourceAudio,
   type ExtractedOutput,
-  type RecentCapture,
   type ReviewPayload,
+  type SessionDashboardPayload,
+  type SessionOverview,
   type SummaryOutput,
+  type WorkspaceActionItem,
 } from "../lib/reviewApi";
 
 export function AppShell() {
-  const [recentCaptures, setRecentCaptures] = useState<RecentCapture[]>([]);
-  const [selectedCaptureId, setSelectedCaptureId] = useState("");
+  const [captureId, setCaptureId] = useState("");
   const [payload, setPayload] = useState<ReviewPayload | null>(null);
-  const [status, setStatus] = useState("Select a recent capture to review persisted notes.");
-  const [isRefreshingList, setIsRefreshingList] = useState(false);
+  const [status, setStatus] = useState("Enter a capture id to review persisted notes.");
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    void refreshRecentCaptures();
-  }, []);
-
-  async function refreshRecentCaptures() {
-    setIsRefreshingList(true);
-    try {
-      const captures = await listRecentCaptures(12);
-      setRecentCaptures(captures);
-      if (!captures.length) {
-        setStatus("No captures found yet. Run capture/transcribe/summary flows first.");
-        return;
-      }
-      setStatus(`Loaded ${captures.length} recent captures.`);
-      if (!selectedCaptureId || !captures.some((item) => item.capture_id === selectedCaptureId)) {
-        await loadCapture(captures[0].capture_id);
-      }
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshingList(false);
+  async function handleLoad() {
+    if (!captureId.trim()) {
+      setStatus("Capture id is required.");
+      return;
     }
-  }
-
-  async function loadCapture(captureId: string) {
-    if (!captureId.trim()) return;
     setIsLoading(true);
-    setSelectedCaptureId(captureId);
     setStatus("Loading capture outputs...");
     try {
       const nextPayload = await loadReviewPayload(captureId);
       setPayload(nextPayload);
-      setSelectedCaptureId(nextPayload.capture_id);
-      setStatus(`Loaded ${nextPayload.capture_id}.`);
+      setStatus(`Loaded ${nextPayload.capture_id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setIsBusy(false);
     }
   }
 
+  async function handleStopSession() {
+    if (!selectedSession) return;
+    setSelectedSession({ ...selectedSession, lifecycle_state: "processing" });
+    await handleSessionAction(
+      () => stopSession(selectedSession.capture_id),
+      "Stopping recording and processing outputs...",
+      "Processing complete.",
+    );
+  }
+
   async function handleExport(format: "markdown" | "html" | "json") {
-    if (!payload) {
-      setStatus("Load a capture before exporting.");
-      return;
-    }
+    if (!selectedSession) return;
     setStatus(`Exporting ${format}...`);
     try {
-      const message = await exportReview(payload.capture_id, format);
+      const message = await exportReview(selectedSession.capture_id, format);
       setStatus(message);
+      await refreshDashboard(selectedSession.capture_id);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -78,7 +75,7 @@ export function AppShell() {
     reviewStatus: NonNullable<ExtractedOutput["review_status"]>,
     values?: { description?: string; ownerName?: string | null },
   ) {
-    if (!payload) return;
+    if (!payload || !selectedSession) return;
     setStatus(`Saving ${reviewStatus} review state...`);
     try {
       const saved = await saveReviewItem({
@@ -89,6 +86,7 @@ export function AppShell() {
         ownerName: values?.ownerName ?? item.effective_owner_name ?? item.owner_name,
       });
       setPayload(updateReviewedItem(payload, { ...item, ...saved }));
+      await refreshDashboard(selectedSession.capture_id);
       setStatus(`Saved ${reviewStatus} review state.`);
       await refreshRecentCaptures();
     } catch (error) {
@@ -96,13 +94,50 @@ export function AppShell() {
     }
   }
 
+  async function handleSaveRetention() {
+    if (!retentionSettings) return;
+    setStatus("Saving retention settings...");
+    try {
+      const saved = await saveRetentionSettings(
+        retentionSettings.raw_audio_retention_days,
+        retentionSettings.delete_temp_processing_files,
+      );
+      setRetentionSettings(saved);
+      await refreshDashboard(selectedSession?.capture_id);
+      setStatus("Retention settings saved.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleCleanup() {
+    setStatus("Running cleanup...");
+    try {
+      const result = await runRetentionCleanup();
+      await refreshDashboard(selectedSession?.capture_id);
+      setStatus(`Cleanup finished. Deleted audio for ${result.deleted_audio_sessions} sessions.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const elapsedLabel = useMemo(() => formatElapsed(selectedSession, clock), [clock, selectedSession]);
+  const filteredSessions = useMemo(
+    () => filterSessions(dashboard?.sessions || [], workspaceQuery),
+    [dashboard?.sessions, workspaceQuery],
+  );
+  const filteredActionItems = useMemo(
+    () => filterWorkspaceItems(dashboard?.action_items || [], workspaceQuery, actionStateFilter),
+    [actionStateFilter, dashboard?.action_items, workspaceQuery],
+  );
+
   return (
     <main className="app-shell">
       <section className="hero review-hero">
-        <p className="eyebrow">Local Review Workspace</p>
-        <h1>Meeting Notes Review</h1>
+        <p className="eyebrow">Local Recording Workspace</p>
+        <h1>Meeting Notes Workflow</h1>
         <p className="hero-copy">
-          Choose a recent capture, review generated summaries and extracted outcomes, then export
+          Load a capture, review generated summaries and extracted outcomes, then export
           Markdown, HTML, or JSON for local sharing.
         </p>
 
@@ -165,16 +200,18 @@ export function AppShell() {
         </div>
 
         <div className="capture-toolbar">
-          {payload ? <span className="status-pill">Selected: {payload.capture_id}</span> : null}
-          {payload ? (
-            <button
-              className="secondary-button"
-              onClick={() => void loadCapture(payload.capture_id)}
-              disabled={isLoading}
-            >
-              {isLoading ? "Loading..." : "Reload selected capture"}
-            </button>
-          ) : null}
+          <input
+            aria-label="Capture id"
+            placeholder="capture-id"
+            value={captureId}
+            onChange={(event) => setCaptureId(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleLoad();
+            }}
+          />
+          <button onClick={() => void handleLoad()} disabled={isLoading}>
+            {isLoading ? "Loading..." : "Load Capture"}
+          </button>
         </div>
         <p className="status-line">{status}</p>
       </section>
@@ -182,9 +219,7 @@ export function AppShell() {
       {payload ? (
         <section className="review-layout">
           <aside className="review-sidebar">
-            <p className="eyebrow">Capture</p>
             <h2>{payload.capture_id}</h2>
-            <p>Generated: {formatDate(payload.metadata.latest_generated_at)}</p>
             <p>Exported preview: {formatDate(payload.exported_at)}</p>
             <div className="badge-row">
               {payload.metadata.providers.length ? (
@@ -196,12 +231,6 @@ export function AppShell() {
               ) : (
                 <span className="status-pill subtle">Unknown provider</span>
               )}
-            </div>
-            <div className="meta-grid">
-              <MetadataStat label="Summaries" value={payload.metadata.summary_count} />
-              <MetadataStat label="Actions" value={payload.metadata.action_count} />
-              <MetadataStat label="Decisions" value={payload.metadata.decision_count} />
-              <MetadataStat label="Follow-ups" value={payload.metadata.follow_up_count} />
             </div>
             <div className="export-actions">
               <button onClick={() => void handleExport("markdown")}>Export Markdown</button>
@@ -235,8 +264,8 @@ export function AppShell() {
         <section className="empty-state">
           <h2>No capture loaded</h2>
           <p>
-            Pick a recent capture above. In browser-only dev mode this list uses demo captures so
-            the review layout remains visible.
+            The desktop shell uses the local backend through Tauri. In browser-only dev mode,
+            it shows demo data so the review layout remains visible.
           </p>
         </section>
       )}
@@ -272,12 +301,79 @@ function SummaryPanel({ summaries }: { summaries: SummaryOutput[] }) {
   );
 }
 
-function TextBlock({ text }: { text: string }) {
-  const blocks = text
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
+function WorkspacePanel({
+  items,
+  stateFilter,
+  onStateFilter,
+  onOpenSession,
+}: {
+  items: WorkspaceActionItem[];
+  stateFilter: "open" | "blocked" | "done" | "all";
+  onStateFilter: (value: "open" | "blocked" | "done" | "all") => void;
+  onOpenSession: (captureId: string) => void;
+}) {
+  const grouped = groupWorkspaceItems(items);
+  return (
+    <section className="panel workspace-panel">
+      <div className="panel-heading compact">
+        <div>
+          <p className="eyebrow">Cross-session Outcomes</p>
+          <h2>Action Workspace</h2>
+        </div>
+        <span className="count-pill">{items.length}</span>
+      </div>
+      <div className="segmented-control" aria-label="Action state filter">
+        {(["open", "blocked", "done", "all"] as const).map((state) => (
+          <button
+            className={stateFilter === state ? "active" : ""}
+            key={state}
+            onClick={() => onStateFilter(state)}
+          >
+            {state}
+          </button>
+        ))}
+      </div>
+      {grouped.length ? (
+        <div className="workspace-group-list">
+          {grouped.map((group) => (
+            <section className="workspace-group" key={group.capture_id}>
+              <div className="workspace-group-heading">
+                <div>
+                  <h3>{group.source_display_name}</h3>
+                  <p>{group.capture_id}</p>
+                </div>
+                <button className="secondary-button" onClick={() => onOpenSession(group.capture_id)}>
+                  Open
+                </button>
+              </div>
+              <div className="workspace-item-list">
+                {group.items.map((item) => (
+                  <article className="workspace-item" key={`${item.item_type}-${item.capture_id}-${item.id}`}>
+                    <div>
+                      <strong>{item.effective_description || item.description}</strong>
+                      <div className="badge-row">
+                        <span className={`status-pill action-${item.workflow_state}`}>{item.workflow_state}</span>
+                        <ReviewStatusBadge status={item.review_status || "generated"} />
+                        <OwnerBadge owner={item.effective_owner_name || item.owner_name} />
+                        <span className="status-pill subtle">{formatItemType(item.item_type)}</span>
+                      </div>
+                    </div>
+                    {item.evidence_snippet ? <Evidence text={item.evidence_snippet} /> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No matching cross-session outcomes.</p>
+      )}
+    </section>
+  );
+}
 
+function TextBlock({ text }: { text: string }) {
+  const blocks = text.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (!blocks.length) return null;
   return (
     <div className="summary-text">
@@ -436,18 +532,10 @@ function ReviewItemCard({
             <button className="secondary-button" onClick={() => setIsEditing(true)} disabled={isSaving}>
               Edit
             </button>
-            <button
-              className="secondary-button"
-              onClick={() => void runReviewUpdate("accepted")}
-              disabled={isSaving}
-            >
+            <button className="secondary-button" onClick={() => void runReviewUpdate("accepted")} disabled={isSaving}>
               Accept
             </button>
-            <button
-              className="danger-button"
-              onClick={() => void runReviewUpdate("rejected")}
-              disabled={isSaving}
-            >
+            <button className="danger-button" onClick={() => void runReviewUpdate("rejected")} disabled={isSaving}>
               Reject
             </button>
           </>
@@ -497,6 +585,79 @@ function Evidence({ text }: { text?: string | null }) {
 function formatDate(value?: string | null) {
   if (!value) return "Unknown";
   return new Date(value).toLocaleString();
+}
+
+function formatElapsed(session: SessionOverview | null, clock: number) {
+  if (!session) return "00:00";
+  const base = session.recorded_seconds || 0;
+  const startedAt = session.active_capture?.started_at;
+  const extra =
+    session.lifecycle_state === "recording" && startedAt
+      ? Math.max(0, Math.floor((clock - Date.parse(startedAt)) / 1000))
+      : 0;
+  const total = base + extra;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function filterSessions(sessions: SessionOverview[], query: string) {
+  const normalized = normalizeSearch(query);
+  if (!normalized) return sessions;
+  return sessions.filter((session) =>
+    normalizeSearch(`${session.display_name} ${session.capture_id} ${session.lifecycle_state}`).includes(normalized),
+  );
+}
+
+function filterWorkspaceItems(
+  items: WorkspaceActionItem[],
+  query: string,
+  stateFilter: "open" | "blocked" | "done" | "all",
+) {
+  const normalized = normalizeSearch(query);
+  return items.filter((item) => {
+    if (stateFilter !== "all" && item.workflow_state !== stateFilter) return false;
+    if (!normalized) return true;
+    return normalizeSearch(
+      `${item.source_display_name} ${item.capture_id} ${item.effective_description || item.description} ${
+        item.effective_owner_name || item.owner_name || ""
+      } ${item.evidence_snippet || ""}`,
+    ).includes(normalized);
+  });
+}
+
+function groupWorkspaceItems(items: WorkspaceActionItem[]) {
+  const groups: {
+    capture_id: string;
+    source_display_name: string;
+    items: WorkspaceActionItem[];
+  }[] = [];
+  for (const item of items) {
+    let group = groups.find((candidate) => candidate.capture_id === item.capture_id);
+    if (!group) {
+      group = {
+        capture_id: item.capture_id,
+        source_display_name: item.source_display_name,
+        items: [],
+      };
+      groups.push(group);
+    }
+    if (!group.items.some((candidate) => candidate.item_type === item.item_type && candidate.id === item.id)) {
+      group.items.push(item);
+    }
+  }
+  return groups;
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function formatItemType(value: WorkspaceActionItem["item_type"]) {
+  if (value === "blocker_risk") return "Blocker / risk";
+  if (value === "open_question") return "Open question";
+  if (value === "follow_up") return "Follow-up";
+  return "Action";
 }
 
 function updateReviewedItem(payload: ReviewPayload, item: ExtractedOutput): ReviewPayload {

@@ -33,6 +33,41 @@ def _update_capture_state(state_path: Path, **updates) -> dict[str, object] | No
     return state
 
 
+def _reserve_chunk_path(
+    *,
+    state_path: Path,
+    source_dir: Path,
+    source_name: str,
+    state_lock: threading.Lock,
+) -> Path:
+    with state_lock:
+        state = read_capture_state(state_path)
+        if state is None:
+            raise RuntimeError("Capture state disappeared while reserving a chunk path.")
+        next_index = int(state.get("next_chunk_index", 1))
+        chunk_path = source_dir / f"{next_index:06d}_{_utc_timestamp()}_{source_name}.wav"
+        state["next_chunk_index"] = next_index + 1
+        write_capture_state(state_path, state)
+    return chunk_path
+
+
+def _append_chunk_state(
+    *,
+    state_path: Path,
+    chunk_path: Path,
+    state_lock: threading.Lock,
+) -> None:
+    with state_lock:
+        state = read_capture_state(state_path)
+        if state is None:
+            return
+        chunk_files = list(state.get("chunk_files", []))
+        chunk_files.append(str(chunk_path))
+        state["chunk_files"] = chunk_files
+        state["last_chunk_at"] = _utc_timestamp()
+        write_capture_state(state_path, state)
+
+
 def _record_source(
     *,
     source_name: str,
@@ -46,6 +81,7 @@ def _record_source(
     logger,
     state_path: Path,
     startup_event: threading.Event,
+    state_lock: threading.Lock,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     chunk_frames = sample_rate * chunk_seconds
@@ -65,32 +101,36 @@ def _record_source(
         logger.info("%s first frame read succeeded", source_name)
         startup_event.set()
         frames = _normalise_channels(frames, channels)
-        first_chunk_path = output_dir / f"{source_name}_{_utc_timestamp()}.wav"
+        first_chunk_path = _reserve_chunk_path(
+            state_path=state_path,
+            source_dir=output_dir,
+            source_name=source_name,
+            state_lock=state_lock,
+        )
         soundfile_module.write(str(first_chunk_path), frames, sample_rate)
         logger.info("%s first chunk write succeeded: %s", source_name, first_chunk_path)
-
-        state = read_capture_state(state_path)
-        if state is not None:
-            chunk_files = list(state.get("chunk_files", []))
-            chunk_files.append(str(first_chunk_path))
-            state["chunk_files"] = chunk_files
-            state["last_chunk_at"] = _utc_timestamp()
-            write_capture_state(state_path, state)
+        _append_chunk_state(
+            state_path=state_path,
+            chunk_path=first_chunk_path,
+            state_lock=state_lock,
+        )
 
         while not stop_path.exists():
             frames = recorder.record(numframes=chunk_frames)
             frames = _normalise_channels(frames, channels)
-            chunk_path = output_dir / f"{source_name}_{_utc_timestamp()}.wav"
+            chunk_path = _reserve_chunk_path(
+                state_path=state_path,
+                source_dir=output_dir,
+                source_name=source_name,
+                state_lock=state_lock,
+            )
             soundfile_module.write(str(chunk_path), frames, sample_rate)
             logger.info("Wrote %s chunk to %s", source_name, chunk_path)
-
-            state = read_capture_state(state_path)
-            if state is not None:
-                chunk_files = list(state.get("chunk_files", []))
-                chunk_files.append(str(chunk_path))
-                state["chunk_files"] = chunk_files
-                state["last_chunk_at"] = _utc_timestamp()
-                write_capture_state(state_path, state)
+            _append_chunk_state(
+                state_path=state_path,
+                chunk_path=chunk_path,
+                state_lock=state_lock,
+            )
 
 
 def run_capture_worker(config: AppConfig, state_path: Path) -> int:
@@ -117,6 +157,7 @@ def run_capture_worker(config: AppConfig, state_path: Path) -> int:
     threads: list[threading.Thread] = []
     failures: list[str] = []
     lock = threading.Lock()
+    state_lock = threading.Lock()
     startup_events: dict[str, threading.Event] = {}
     startup_timeout_seconds = 5.0
 
@@ -134,6 +175,7 @@ def run_capture_worker(config: AppConfig, state_path: Path) -> int:
                 logger=logger,
                 state_path=state_path,
                 startup_event=startup_event,
+                state_lock=state_lock,
             )
         except Exception as exc:  # pragma: no cover - exercised only with hardware
             with lock:

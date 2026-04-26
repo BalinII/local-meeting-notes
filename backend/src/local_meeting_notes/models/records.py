@@ -12,7 +12,24 @@ class MeetingRecord:
     title: str
     status: str
     started_at: str
+    capture_id: str = ""
     ended_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    manual_title: bool = True
+    recorded_seconds: int = 0
+    last_recording_started_at: str | None = None
+    reviewed_at: str | None = None
+    exported_at: str | None = None
+    archived_at: str | None = None
+    last_processed_at: str | None = None
+    last_error: str | None = None
+    keep_source_audio: bool = True
+    source_audio_deleted_at: str | None = None
+    raw_audio_expires_at: str | None = None
+    latest_provider_name: str | None = None
+    latest_model_name: str | None = None
+    has_reviewed_items: bool = False
 
 
 @dataclass(slots=True)

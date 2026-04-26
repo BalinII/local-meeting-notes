@@ -35,6 +35,10 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
         row = connection.execute(
             "SELECT external_id, title FROM meetings WHERE id = ?", (meeting_id,)
         ).fetchone()
+        meeting_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(meetings)").fetchall()
+        }
         columns = {
             column["name"]
             for column in connection.execute("PRAGMA table_info(transcript_segments)").fetchall()
@@ -59,8 +63,13 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
             column["name"]
             for column in connection.execute("PRAGMA table_info(follow_ups)").fetchall()
         }
+        app_settings_columns = {
+            column["name"]
+            for column in connection.execute("PRAGMA table_info(app_settings)").fetchall()
+        }
 
     assert {"meetings", "participants", "transcript_segments", "summaries", "actions", "decisions", "follow_ups"}.issubset(tables)
+    assert {"capture_id", "created_at", "updated_at", "recorded_seconds", "keep_source_audio", "raw_audio_expires_at", "has_reviewed_items"}.issubset(meeting_columns)
     assert {"capture_id", "source_chunk_path", "transcription_status", "provider_name", "model_name", "error_message"}.issubset(columns)
     assert {"capture_id", "source_audio_path", "diarization_status", "speaker_label", "provider_name", "confidence", "error_message"}.issubset(diarization_columns)
     assert {"capture_id", "title", "evidence_snippet", "provider_name", "model_name", "generated_at"}.issubset(summary_columns)
@@ -68,5 +77,6 @@ def test_database_bootstrap_and_basic_persistence(local_tmp_dir) -> None:
     assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at", *review_columns}.issubset(action_columns)
     assert {"capture_id", "evidence_snippet", "start_offset_seconds", "end_offset_seconds", "provider_name", "model_name", "generated_at", *review_columns}.issubset(decision_columns)
     assert {"capture_id", "follow_up_type", "owner_name", "status", "evidence_snippet", "provider_name", "model_name", "generated_at", *review_columns}.issubset(follow_up_columns)
+    assert {"key", "value", "updated_at"}.issubset(app_settings_columns)
     assert row["external_id"] == "mock-test-001"
     assert row["title"] == "Mock Test Meeting"

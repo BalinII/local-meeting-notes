@@ -11,6 +11,26 @@ from ..config import AppConfig
 from .schema import SCHEMA_STATEMENTS
 
 
+MEETING_MIGRATIONS = {
+    "capture_id": "ALTER TABLE meetings ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
+    "created_at": "ALTER TABLE meetings ADD COLUMN created_at TEXT",
+    "updated_at": "ALTER TABLE meetings ADD COLUMN updated_at TEXT",
+    "manual_title": "ALTER TABLE meetings ADD COLUMN manual_title INTEGER NOT NULL DEFAULT 1",
+    "recorded_seconds": "ALTER TABLE meetings ADD COLUMN recorded_seconds INTEGER NOT NULL DEFAULT 0",
+    "last_recording_started_at": "ALTER TABLE meetings ADD COLUMN last_recording_started_at TEXT",
+    "reviewed_at": "ALTER TABLE meetings ADD COLUMN reviewed_at TEXT",
+    "exported_at": "ALTER TABLE meetings ADD COLUMN exported_at TEXT",
+    "archived_at": "ALTER TABLE meetings ADD COLUMN archived_at TEXT",
+    "last_processed_at": "ALTER TABLE meetings ADD COLUMN last_processed_at TEXT",
+    "last_error": "ALTER TABLE meetings ADD COLUMN last_error TEXT",
+    "keep_source_audio": "ALTER TABLE meetings ADD COLUMN keep_source_audio INTEGER NOT NULL DEFAULT 1",
+    "source_audio_deleted_at": "ALTER TABLE meetings ADD COLUMN source_audio_deleted_at TEXT",
+    "raw_audio_expires_at": "ALTER TABLE meetings ADD COLUMN raw_audio_expires_at TEXT",
+    "latest_provider_name": "ALTER TABLE meetings ADD COLUMN latest_provider_name TEXT",
+    "latest_model_name": "ALTER TABLE meetings ADD COLUMN latest_model_name TEXT",
+    "has_reviewed_items": "ALTER TABLE meetings ADD COLUMN has_reviewed_items INTEGER NOT NULL DEFAULT 0",
+}
+
 TRANSCRIPT_SEGMENT_MIGRATIONS = {
     "capture_id": "ALTER TABLE transcript_segments ADD COLUMN capture_id TEXT NOT NULL DEFAULT ''",
     "source_chunk_path": "ALTER TABLE transcript_segments ADD COLUMN source_chunk_path TEXT NOT NULL DEFAULT ''",
@@ -114,6 +134,7 @@ def _apply_schema_migrations(connection: sqlite3.Connection) -> None:
         row["name"]
         for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     }
+    _apply_table_migrations(connection, "meetings", MEETING_MIGRATIONS)
     transcript_columns = set()
     if "transcript_segments" in table_names:
         transcript_columns = {

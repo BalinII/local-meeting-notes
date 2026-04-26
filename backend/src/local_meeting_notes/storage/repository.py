@@ -1,7 +1,8 @@
-"""Minimal repository helpers for mock session persistence."""
+"""Repository helpers for persisted local sessions and outputs."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from ..models import (
@@ -19,10 +20,56 @@ from ..models import (
 def insert_meeting(connection: sqlite3.Connection, meeting: MeetingRecord) -> int:
     cursor = connection.execute(
         """
-        INSERT INTO meetings (external_id, title, status, started_at, ended_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO meetings (
+            external_id,
+            title,
+            status,
+            started_at,
+            capture_id,
+            ended_at,
+            created_at,
+            updated_at,
+            manual_title,
+            recorded_seconds,
+            last_recording_started_at,
+            reviewed_at,
+            exported_at,
+            archived_at,
+            last_processed_at,
+            last_error,
+            keep_source_audio,
+            source_audio_deleted_at,
+            raw_audio_expires_at,
+            latest_provider_name,
+            latest_model_name,
+            has_reviewed_items
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (meeting.external_id, meeting.title, meeting.status, meeting.started_at, meeting.ended_at),
+        (
+            meeting.external_id,
+            meeting.title,
+            meeting.status,
+            meeting.started_at,
+            meeting.capture_id,
+            meeting.ended_at,
+            meeting.created_at,
+            meeting.updated_at,
+            int(meeting.manual_title),
+            meeting.recorded_seconds,
+            meeting.last_recording_started_at,
+            meeting.reviewed_at,
+            meeting.exported_at,
+            meeting.archived_at,
+            meeting.last_processed_at,
+            meeting.last_error,
+            int(meeting.keep_source_audio),
+            meeting.source_audio_deleted_at,
+            meeting.raw_audio_expires_at,
+            meeting.latest_provider_name,
+            meeting.latest_model_name,
+            int(meeting.has_reviewed_items),
+        ),
     )
     return int(cursor.lastrowid)
 
@@ -220,6 +267,126 @@ def update_meeting_status(
     )
 
 
+def fetch_meeting_by_capture_id(connection: sqlite3.Connection, capture_id: str) -> sqlite3.Row | None:
+    return connection.execute(
+        """
+        SELECT *
+        FROM meetings
+        WHERE capture_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (capture_id,),
+    ).fetchone()
+
+
+def fetch_recent_meetings(connection: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM meetings
+        WHERE capture_id <> ''
+        ORDER BY COALESCE(updated_at, created_at, started_at) DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int = 100) -> list[sqlite3.Row]:
+    return connection.execute(
+        """
+        SELECT *
+        FROM (
+            SELECT
+                actions.id AS id,
+                'action' AS item_type,
+                actions.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                actions.description AS description,
+                actions.owner_name AS owner_name,
+                actions.status AS workflow_state,
+                actions.evidence_snippet AS evidence_snippet,
+                actions.start_offset_seconds AS start_offset_seconds,
+                actions.end_offset_seconds AS end_offset_seconds,
+                actions.provider_name AS provider_name,
+                actions.model_name AS model_name,
+                actions.generated_at AS generated_at,
+                actions.review_status AS review_status,
+                actions.reviewed_description AS reviewed_description,
+                actions.reviewed_owner_name AS reviewed_owner_name,
+                actions.reviewed_at AS reviewed_at
+            FROM actions
+            INNER JOIN meetings ON meetings.id = actions.meeting_id
+            WHERE actions.review_status <> 'rejected'
+
+            UNION ALL
+
+            SELECT
+                follow_ups.id AS id,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                follow_ups.description AS description,
+                follow_ups.owner_name AS owner_name,
+                follow_ups.status AS workflow_state,
+                follow_ups.evidence_snippet AS evidence_snippet,
+                follow_ups.start_offset_seconds AS start_offset_seconds,
+                follow_ups.end_offset_seconds AS end_offset_seconds,
+                follow_ups.provider_name AS provider_name,
+                follow_ups.model_name AS model_name,
+                follow_ups.generated_at AS generated_at,
+                follow_ups.review_status AS review_status,
+                follow_ups.reviewed_description AS reviewed_description,
+                follow_ups.reviewed_owner_name AS reviewed_owner_name,
+                follow_ups.reviewed_at AS reviewed_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
+            WHERE follow_ups.review_status <> 'rejected'
+        )
+        ORDER BY COALESCE(reviewed_at, generated_at, source_updated_at) DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def update_meeting_fields(
+    connection: sqlite3.Connection,
+    capture_id: str,
+    **fields: object,
+) -> None:
+    if not fields:
+        return
+    assignments = ", ".join(f"{key} = ?" for key in fields)
+    values = [int(value) if isinstance(value, bool) else value for value in fields.values()]
+    values.append(capture_id)
+    connection.execute(
+        f"UPDATE meetings SET {assignments} WHERE capture_id = ?",
+        values,
+    )
+
+
+def upsert_app_setting(connection: sqlite3.Connection, key: str, value: object, updated_at: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        """,
+        (key, json.dumps(value), updated_at),
+    )
+
+
+def fetch_app_settings(connection: sqlite3.Connection) -> dict[str, object]:
+    rows = connection.execute("SELECT key, value FROM app_settings").fetchall()
+    return {str(row["key"]): json.loads(str(row["value"])) for row in rows}
+
+
 def fetch_table_names(connection: sqlite3.Connection) -> set[str]:
     rows = connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'"
@@ -228,11 +395,7 @@ def fetch_table_names(connection: sqlite3.Connection) -> set[str]:
 
 
 def ensure_meeting_for_capture(connection: sqlite3.Connection, capture_id: str) -> int:
-    external_id = f"capture:{capture_id}"
-    row = connection.execute(
-        "SELECT id FROM meetings WHERE external_id = ?",
-        (external_id,),
-    ).fetchone()
+    row = fetch_meeting_by_capture_id(connection, capture_id)
     if row is not None:
         return int(row["id"])
 
@@ -240,10 +403,13 @@ def ensure_meeting_for_capture(connection: sqlite3.Connection, capture_id: str) 
         connection,
         MeetingRecord(
             id=None,
-            external_id=external_id,
+            external_id=f"capture:{capture_id}",
             title=f"Audio Capture {capture_id}",
-            status="transcription_pending",
+            status="draft",
             started_at="1970-01-01T00:00:00+00:00",
+            capture_id=capture_id,
+            created_at="1970-01-01T00:00:00+00:00",
+            updated_at="1970-01-01T00:00:00+00:00",
         ),
     )
 

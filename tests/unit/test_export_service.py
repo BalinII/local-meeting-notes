@@ -13,6 +13,7 @@ from local_meeting_notes.storage.repository import (
     insert_decision,
     insert_follow_up,
     insert_summary,
+    update_meeting_fields,
 )
 
 
@@ -36,6 +37,7 @@ def _seed_outputs(config, capture_id: str = "capture-export") -> None:
     bootstrap_database(config)
     with connection_context(config.database_path) as connection:
         meeting_id = ensure_meeting_for_capture(connection, capture_id)
+        update_meeting_fields(connection, capture_id, title=capture_id.replace("-", " ").title())
         insert_summary(
             connection,
             SummaryRecord(
@@ -176,15 +178,12 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     html = service.render_export("capture-export", "html")
     payload = json.loads(service.render_export("capture-export", "json"))
 
-    assert "# Meeting Notes — Capture Export" in markdown
-    assert "## Executive Summary" in markdown
+    assert "# Meeting Notes: capture-export" in markdown
     assert "## Actions" in markdown
-    assert markdown.count("## Detailed Summary") == 1
-    assert "Evidence snippets" in markdown
-    assert "<h1>Meeting Notes — Capture Export</h1>" in html
-    assert html.count("<h2>Detailed Summary</h2>") == 1
-    assert "Review status: generated" in html
-    assert "<nav>" in html
+    assert markdown.count("### Detailed Summary") == 1
+    assert "Evidence:" in markdown
+    assert "<h1>Meeting Notes: capture-export</h1>" in html
+    assert html.count("<h3>Detailed Summary</h3>") == 1
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
 

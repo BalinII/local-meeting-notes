@@ -37,6 +37,110 @@ fn export_capture(capture_id: String, format: String) -> Result<String, String> 
 }
 
 #[tauri::command]
+fn session_dashboard() -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "list"])
+}
+
+#[tauri::command]
+fn create_session(title: Option<String>) -> Result<serde_json::Value, String> {
+    let mut args = vec!["session", "create"];
+    if let Some(value) = title.as_deref() {
+        args.push("--title");
+        args.push(value);
+    }
+    run_backend_json(&args)
+}
+
+#[tauri::command]
+fn get_session(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "get", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn rename_session(capture_id: String, title: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "rename", "--capture-id", capture_id.as_str(), "--title", title.as_str()])
+}
+
+#[tauri::command]
+fn start_session(capture_id: String, include_loopback: bool, include_microphone: bool) -> Result<serde_json::Value, String> {
+    let mut args = vec!["session", "record-start", "--capture-id", capture_id.as_str()];
+    if !include_loopback {
+        args.push("--no-loopback");
+    }
+    if !include_microphone {
+        args.push("--no-microphone");
+    }
+    run_backend_json(&args)
+}
+
+#[tauri::command]
+fn pause_session(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "pause", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn resume_session(capture_id: String, include_loopback: bool, include_microphone: bool) -> Result<serde_json::Value, String> {
+    let mut args = vec!["session", "resume", "--capture-id", capture_id.as_str()];
+    if !include_loopback {
+        args.push("--no-loopback");
+    }
+    if !include_microphone {
+        args.push("--no-microphone");
+    }
+    run_backend_json(&args)
+}
+
+#[tauri::command]
+fn stop_session(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "record-stop", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn set_keep_source_audio(capture_id: String, enabled: bool) -> Result<serde_json::Value, String> {
+    run_backend_json(&[
+        "session",
+        "keep-audio",
+        "--capture-id",
+        capture_id.as_str(),
+        "--enabled",
+        if enabled { "true" } else { "false" },
+    ])
+}
+
+#[tauri::command]
+fn delete_source_audio(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "delete-audio", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn archive_session(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "archive", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn load_retention_settings() -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "retention-show"])
+}
+
+#[tauri::command]
+fn save_retention_settings(raw_audio_retention_days: i64, delete_temp_processing_files: bool) -> Result<serde_json::Value, String> {
+    let raw_days = raw_audio_retention_days.to_string();
+    run_backend_json(&[
+        "session",
+        "retention-update",
+        "--raw-audio-retention-days",
+        raw_days.as_str(),
+        "--delete-temp-processing-files",
+        if delete_temp_processing_files { "true" } else { "false" },
+    ])
+}
+
+#[tauri::command]
+fn cleanup_retention() -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "cleanup"])
+}
+
+#[tauri::command]
 fn save_review_item(
     item_type: String,
     item_id: i64,
@@ -64,8 +168,7 @@ fn save_review_item(
         args.push(value);
     }
 
-    let output = run_backend(&args)?;
-    serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+    run_backend_json(&args)
 }
 
 fn run_backend(args: &[&str]) -> Result<String, String> {
@@ -99,11 +202,30 @@ fn run_backend(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+fn run_backend_json(args: &[&str]) -> Result<serde_json::Value, String> {
+    let output = run_backend(args)?;
+    serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             scaffold_status,
+            session_dashboard,
+            create_session,
+            get_session,
+            rename_session,
+            start_session,
+            pause_session,
+            resume_session,
+            stop_session,
+            set_keep_source_audio,
+            delete_source_audio,
+            archive_session,
+            load_retention_settings,
+            save_retention_settings,
+            cleanup_retention,
             review_capture,
             list_recent_captures,
             export_capture,

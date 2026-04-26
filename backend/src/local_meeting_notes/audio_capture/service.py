@@ -114,31 +114,47 @@ class AudioCaptureService:
         chunk_seconds: int,
         sample_rate: int,
         channels: int,
+        capture_id: str | None = None,
     ) -> dict[str, object]:
         existing = self.get_status()
-        if existing.get("status") == "running":
+        if existing.get("status") in {"starting", "running"}:
             raise RuntimeError("Audio capture is already running.")
 
         if not include_loopback and not include_microphone:
             raise RuntimeError("At least one capture source must be enabled.")
 
+        speaker_name: str | None = None
+        microphone_name: str | None = None
         try:
             soundcard, _ = load_audio_dependencies()
             if include_loopback:
                 loopback_device = self._get_loopback_microphone(soundcard)
+                speaker_name = getattr(loopback_device, "name", "Unknown loopback")
                 self.logger.info(
                     "Selected loopback device: %s (%s)",
-                    getattr(loopback_device, "name", "Unknown loopback"),
+                    speaker_name,
                     getattr(loopback_device, "id", "no-id"),
                 )
+            if include_microphone:
+                microphone_name = getattr(soundcard.default_microphone(), "name", "Unknown microphone")
         except AudioDependencyError:
             raise
 
-        capture_id = f"capture-{uuid4().hex[:8]}"
+        capture_id = capture_id or f"capture-{uuid4().hex[:8]}"
         output_dir = self.config.audio_output_dir / capture_id
         stop_request_path = self.config.temp_output_dir / f"{capture_id}.stop"
         stop_request_path.unlink(missing_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
+        existing_chunk_files = [
+            str(path)
+            for path in sorted(output_dir.rglob("*.wav"))
+        ]
+        next_chunk_index = _next_chunk_index_from_files(existing_chunk_files)
+        initial_started_at = (
+            existing.get("initial_started_at")
+            if existing.get("capture_id") == capture_id and existing.get("initial_started_at")
+            else _utc_iso()
+        )
 
         session = AudioCaptureSession(
             capture_id=capture_id,
@@ -149,6 +165,8 @@ class AudioCaptureService:
             channels=channels,
             include_microphone=include_microphone,
             include_loopback=include_loopback,
+            microphone_name=microphone_name,
+            speaker_name=speaker_name,
             status="starting",
         )
 
@@ -161,10 +179,14 @@ class AudioCaptureService:
             "channels": session.channels,
             "include_microphone": session.include_microphone,
             "include_loopback": session.include_loopback,
+            "microphone_name": session.microphone_name,
+            "speaker_name": session.speaker_name,
             "status": session.status,
             "pid": None,
             "started_at": _utc_iso(),
-            "chunk_files": [],
+            "initial_started_at": initial_started_at,
+            "chunk_files": existing_chunk_files,
+            "next_chunk_index": next_chunk_index,
             "last_error": None,
         }
         write_capture_state(self.config.audio_capture_state_path, payload)
@@ -232,3 +254,13 @@ class AudioCaptureService:
         if state.get("status") == "failed" and state.get("last_error"):
             state["message"] = f"{state['message']} Failure: {state['last_error']}"
         return state
+
+
+def _next_chunk_index_from_files(paths: list[str]) -> int:
+    next_index = 1
+    for raw_path in paths:
+        stem = Path(raw_path).stem
+        prefix = stem.split("_", 1)[0]
+        if prefix.isdigit():
+            next_index = max(next_index, int(prefix) + 1)
+    return next_index

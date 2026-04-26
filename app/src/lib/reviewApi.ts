@@ -49,16 +49,6 @@ export type ReviewPayload = {
   open_questions: ExtractedOutput[];
 };
 
-export type RecentCapture = {
-  capture_id: string;
-  created_at?: string | null;
-  latest_generated_at?: string | null;
-  latest_reviewed_at?: string | null;
-  providers: string[];
-  models: string[];
-  has_reviewed_items: boolean;
-};
-
 type TauriGlobal = {
   core?: {
     invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -79,20 +69,69 @@ export async function loadReviewPayload(captureId: string): Promise<ReviewPayloa
   return invoke<ReviewPayload>("review_capture", { captureId });
 }
 
-export async function listRecentCaptures(limit = 12): Promise<RecentCapture[]> {
-  const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) {
-    return demoRecentCaptures();
-  }
-  return invoke<RecentCapture[]>("list_recent_captures", { limit });
-}
-
 export async function exportReview(captureId: string, format: "markdown" | "html" | "json") {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) {
     return `Demo mode: export ${format} for ${captureId}`;
   }
   return invoke<string>("export_capture", { captureId, format });
+}
+
+export async function updateKeepSourceAudio(captureId: string, enabled: boolean) {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return { ...demoDashboard().sessions[0], capture_id: captureId, keep_source_audio: enabled };
+  }
+  return invoke<SessionOverview>("set_keep_source_audio", { captureId, enabled });
+}
+
+export async function deleteSourceAudio(captureId: string) {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return {
+      ...demoDashboard().sessions[0],
+      capture_id: captureId,
+      keep_source_audio: false,
+      audio_present: false,
+      source_audio_deleted_at: new Date().toISOString(),
+    };
+  }
+  return invoke<SessionOverview>("delete_source_audio", { captureId });
+}
+
+export async function archiveSession(captureId: string) {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return { ...demoDashboard().sessions[0], capture_id: captureId, lifecycle_state: "archived" as const };
+  }
+  return invoke<SessionOverview>("archive_session", { captureId });
+}
+
+export async function loadRetentionSettings(): Promise<RetentionSettings> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return demoDashboard().settings;
+  }
+  return invoke<RetentionSettings>("load_retention_settings");
+}
+
+export async function saveRetentionSettings(rawAudioRetentionDays: number, deleteTempProcessingFiles: boolean) {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return { raw_audio_retention_days: rawAudioRetentionDays, delete_temp_processing_files: deleteTempProcessingFiles };
+  }
+  return invoke<RetentionSettings>("save_retention_settings", {
+    rawAudioRetentionDays,
+    deleteTempProcessingFiles,
+  });
+}
+
+export async function runRetentionCleanup() {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return { deleted_audio_sessions: 0, deleted_temp_files: 1, ran_at: new Date().toISOString() };
+  }
+  return invoke<{ deleted_audio_sessions: number; deleted_temp_files: number; ran_at: string }>("cleanup_retention");
 }
 
 export async function saveReviewItem(input: {
@@ -204,27 +243,4 @@ function demoPayload(captureId: string): ReviewPayload {
       },
     ],
   };
-}
-
-function demoRecentCaptures(): RecentCapture[] {
-  return [
-    {
-      capture_id: "capture-demo-002",
-      created_at: "2026-04-24T16:00:00+00:00",
-      latest_generated_at: "2026-04-24T16:08:00+00:00",
-      latest_reviewed_at: "2026-04-24T16:10:00+00:00",
-      providers: ["local_llm"],
-      models: ["llama3.1:8b"],
-      has_reviewed_items: true,
-    },
-    {
-      capture_id: "capture-demo-001",
-      created_at: "2026-04-23T11:00:00+00:00",
-      latest_generated_at: "2026-04-23T11:04:00+00:00",
-      latest_reviewed_at: null,
-      providers: ["heuristic"],
-      models: [],
-      has_reviewed_items: false,
-    },
-  ];
 }

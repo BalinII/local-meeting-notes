@@ -25,6 +25,8 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
         "LOCAL_LLM_MODEL": "llama3.1:8b",
         "LOCAL_LLM_TIMEOUT_SECONDS": "25",
         "LOCAL_LLM_MAX_TRANSCRIPT_CHARS": "8000",
+        "RAW_AUDIO_RETENTION_DAYS": "21",
+        "DELETE_TEMP_PROCESSING_FILES": "0",
     }
 
     config = load_config(env=env)
@@ -45,6 +47,8 @@ def test_load_config_resolves_and_creates_directories(local_tmp_dir) -> None:
     assert config.local_llm_model == "llama3.1:8b"
     assert config.local_llm_timeout_seconds == 25
     assert config.local_llm_max_transcript_chars == 8000
+    assert config.raw_audio_retention_days == 21
+    assert config.delete_temp_processing_files is False
     assert config.database_path == local_tmp_dir / "data" / "app.db"
     assert config.audio_output_dir.exists()
     assert config.log_dir.exists()

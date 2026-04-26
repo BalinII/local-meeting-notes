@@ -29,6 +29,7 @@ from .storage.repository import (
     update_meeting_status,
 )
 from .storage.session_state import clear_session_state, read_session_state, write_session_state
+from .session_workflow.service import SessionWorkflowService
 from .transcription_engine.providers import TranscriptionDependencyError
 from .transcription_engine.service import TranscriptionEngineService
 
@@ -50,6 +51,38 @@ def build_parser() -> argparse.ArgumentParser:
     session_start.add_argument("--title", default="Mock Local Meeting")
 
     session_subparsers.add_parser("stop", help="Stop the current mock meeting session.")
+    session_subparsers.add_parser("list", help="List recent persisted recording sessions.")
+    session_create = session_subparsers.add_parser("create", help="Create a new recording session.")
+    session_create.add_argument("--title")
+    session_get = session_subparsers.add_parser("get", help="Get a persisted recording session.")
+    session_get.add_argument("--capture-id", required=True)
+    session_rename = session_subparsers.add_parser("rename", help="Update the display name for a session.")
+    session_rename.add_argument("--capture-id", required=True)
+    session_rename.add_argument("--title", required=True)
+    session_record_start = session_subparsers.add_parser("record-start", help="Start recording for a session.")
+    session_record_start.add_argument("--capture-id", required=True)
+    session_record_start.add_argument("--no-loopback", action="store_true")
+    session_record_start.add_argument("--no-microphone", action="store_true")
+    session_pause = session_subparsers.add_parser("pause", help="Pause recording for a session.")
+    session_pause.add_argument("--capture-id", required=True)
+    session_resume = session_subparsers.add_parser("resume", help="Resume recording for a session.")
+    session_resume.add_argument("--capture-id", required=True)
+    session_resume.add_argument("--no-loopback", action="store_true")
+    session_resume.add_argument("--no-microphone", action="store_true")
+    session_record_stop = session_subparsers.add_parser("record-stop", help="Stop a session and process outputs.")
+    session_record_stop.add_argument("--capture-id", required=True)
+    session_keep_audio = session_subparsers.add_parser("keep-audio", help="Set keep-source-audio for a session.")
+    session_keep_audio.add_argument("--capture-id", required=True)
+    session_keep_audio.add_argument("--enabled", choices=("true", "false"), required=True)
+    session_delete_audio = session_subparsers.add_parser("delete-audio", help="Delete stored source audio for a session.")
+    session_delete_audio.add_argument("--capture-id", required=True)
+    session_archive = session_subparsers.add_parser("archive", help="Archive a session.")
+    session_archive.add_argument("--capture-id", required=True)
+    session_subparsers.add_parser("retention-show", help="Show persisted retention settings.")
+    session_retention_update = session_subparsers.add_parser("retention-update", help="Update retention settings.")
+    session_retention_update.add_argument("--raw-audio-retention-days", type=int, required=True)
+    session_retention_update.add_argument("--delete-temp-processing-files", choices=("true", "false"), required=True)
+    session_subparsers.add_parser("cleanup", help="Run source-audio and temp-file cleanup.")
 
     audio_parser = subparsers.add_parser("audio", help="Windows audio capture commands.")
     audio_subparsers = audio_parser.add_subparsers(dest="audio_command", required=True)
@@ -556,6 +589,13 @@ def _get_export_service() -> ExportService:
     return service
 
 
+def _get_session_workflow_service() -> SessionWorkflowService:
+    state = bootstrap_application(bootstrap_db=True)
+    service = state.services["session_workflow"]
+    assert isinstance(service, SessionWorkflowService)
+    return service
+
+
 def run_review_show(capture_id: str, export_format: str) -> int:
     service = _get_export_service()
     if export_format == "json":
@@ -600,13 +640,158 @@ def run_review_update_item(
 
 
 def run_export_capture(capture_id: str, export_format: str) -> int:
-    service = _get_export_service()
+    service = _get_session_workflow_service()
     try:
-        output_path = service.export_capture(capture_id, export_format)
+        output_path = service.export_session(capture_id, export_format)
     except ValueError as exc:
         print(str(exc))
         return 1
     print(f"Exported {export_format}: {output_path}")
+    return 0
+
+
+def run_session_list() -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.dashboard_payload(), ensure_ascii=False))
+    return 0
+
+
+def run_session_create(title: str | None = None) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.create_session(title), ensure_ascii=False))
+    return 0
+
+
+def run_session_get(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.get_session(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_rename(capture_id: str, title: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.update_session_display_name(capture_id, title)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_record_start(capture_id: str, no_loopback: bool, no_microphone: bool) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.start_session(
+            capture_id,
+            include_loopback=not no_loopback,
+            include_microphone=not no_microphone,
+        )
+    except (AudioDependencyError, RuntimeError, ValueError) as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_pause(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.pause_session(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_resume(capture_id: str, no_loopback: bool, no_microphone: bool) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.resume_session(
+            capture_id,
+            include_loopback=not no_loopback,
+            include_microphone=not no_microphone,
+        )
+    except (AudioDependencyError, RuntimeError, ValueError) as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_record_stop(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.stop_session(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_keep_audio(capture_id: str, enabled: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.update_keep_source_audio(capture_id, enabled == "true")
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_delete_audio(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.delete_source_audio(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_archive(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.archive_session(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_retention_show() -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.dashboard_payload()["settings"], ensure_ascii=False))
+    return 0
+
+
+def run_session_retention_update(raw_audio_retention_days: int, delete_temp_processing_files: str) -> int:
+    service = _get_session_workflow_service()
+    print(
+        json.dumps(
+            service.update_retention_settings(
+                raw_audio_retention_days=raw_audio_retention_days,
+                delete_temp_processing_files=delete_temp_processing_files == "true",
+            ),
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def run_session_cleanup() -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.cleanup_retention(), ensure_ascii=False))
     return 0
 
 
@@ -622,6 +807,37 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_start(args.title)
     if args.command == "session" and args.session_command == "stop":
         return run_session_stop()
+    if args.command == "session" and args.session_command == "list":
+        return run_session_list()
+    if args.command == "session" and args.session_command == "create":
+        return run_session_create(args.title)
+    if args.command == "session" and args.session_command == "get":
+        return run_session_get(args.capture_id)
+    if args.command == "session" and args.session_command == "rename":
+        return run_session_rename(args.capture_id, args.title)
+    if args.command == "session" and args.session_command == "record-start":
+        return run_session_record_start(args.capture_id, args.no_loopback, args.no_microphone)
+    if args.command == "session" and args.session_command == "pause":
+        return run_session_pause(args.capture_id)
+    if args.command == "session" and args.session_command == "resume":
+        return run_session_resume(args.capture_id, args.no_loopback, args.no_microphone)
+    if args.command == "session" and args.session_command == "record-stop":
+        return run_session_record_stop(args.capture_id)
+    if args.command == "session" and args.session_command == "keep-audio":
+        return run_session_keep_audio(args.capture_id, args.enabled)
+    if args.command == "session" and args.session_command == "delete-audio":
+        return run_session_delete_audio(args.capture_id)
+    if args.command == "session" and args.session_command == "archive":
+        return run_session_archive(args.capture_id)
+    if args.command == "session" and args.session_command == "retention-show":
+        return run_session_retention_show()
+    if args.command == "session" and args.session_command == "retention-update":
+        return run_session_retention_update(
+            args.raw_audio_retention_days,
+            args.delete_temp_processing_files,
+        )
+    if args.command == "session" and args.session_command == "cleanup":
+        return run_session_cleanup()
     if args.command == "audio" and args.audio_command == "devices":
         return run_audio_devices()
     if args.command == "audio" and args.audio_command == "start":

@@ -36,6 +36,8 @@ class AppConfig:
     log_dir: Path
     session_state_path: Path
     audio_capture_state_path: Path
+    raw_audio_retention_days: int
+    delete_temp_processing_files: bool
 
 
 def project_root() -> Path:
@@ -110,4 +112,6 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         log_dir=log_dir,
         session_state_path=session_state_path,
         audio_capture_state_path=audio_capture_state_path,
+        raw_audio_retention_days=int(source.get("RAW_AUDIO_RETENTION_DAYS", "14")),
+        delete_temp_processing_files=source.get("DELETE_TEMP_PROCESSING_FILES", "1") not in {"0", "false", "False"},
     )

@@ -111,6 +111,7 @@ Quality retest flow:
 
 - Phase 7 adds a review payload and export service on top of existing SQLite outputs.
 - Phase 8 adds local review state for extracted items. Generated descriptions stay intact; reviewed descriptions, reviewed owner text, review status, and review timestamps are stored separately.
+- Phase 9 adds a persisted session workflow around the existing local pipeline: named sessions, lifecycle state, recent-session listing, raw-audio retention, and cleanup helpers.
 - Export formats:
   - Markdown: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format markdown`
   - HTML: `python -m local_meeting_notes.app export run --capture-id <capture-id> --format html`
@@ -121,6 +122,17 @@ Quality retest flow:
 - Review update command:
   - `python -m local_meeting_notes.app review update-item --item-type action --item-id <id> --review-status accepted`
   - `python -m local_meeting_notes.app review update-item --item-type follow_up --item-id <id> --review-status edited --description "Reviewed text" --owner-name "Reviewed owner"`
+- Session workflow commands:
+  - `python -m local_meeting_notes.app session create --title "Weekly Product Sync"`
+  - `python -m local_meeting_notes.app session record-start --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app session pause --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app session resume --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app session record-stop --capture-id <capture-id>`
+  - `python -m local_meeting_notes.app session list`
+  - `python -m local_meeting_notes.app session retention-show`
+  - `python -m local_meeting_notes.app session retention-update --raw-audio-retention-days 14 --delete-temp-processing-files true`
+  - `python -m local_meeting_notes.app session cleanup`
 - Exported files are written to `backend/data/exports/<capture-id>/`.
 - The payload separates follow-ups, blockers/risks, and open questions for cleaner review.
 - Markdown and HTML exports use reviewed text where available and omit rejected extracted items. JSON exports keep the full review payload, including original and reviewed fields.
+- Recording pause/resume stays inside one immutable `capture_id`; new audio chunks are appended into the same capture directory with deterministic chunk prefixes so later transcription and diarization preserve order across resumed recordings.
