@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  createRecordingSession,
   exportReview,
   finaliseCapture,
   listGlobalActions,
@@ -7,14 +8,19 @@ import {
   listRecentCaptures,
   listSessionLibrary,
   loadReviewPayload,
+  pauseRecordingSession,
+  resumeRecordingSession,
   saveReviewItem,
   searchAcrossSessions,
+  startRecordingSession,
+  stopRecordingSession,
   updateActionWorkflow,
   type ActionTrackerItem,
   type ExtractedOutput,
   type RecentCapture,
   type ReviewPayload,
   type SessionLibraryEntry,
+  type SessionOverview,
   type SummaryOutput,
 } from "../lib/reviewApi";
 
@@ -38,6 +44,8 @@ export function AppShell() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState("Run a search across sessions.");
   const [isUpdatingWorkflowId, setIsUpdatingWorkflowId] = useState<string | null>(null);
+  const [recordingSession, setRecordingSession] = useState<SessionOverview | null>(null);
+  const [isRecordingBusy, setIsRecordingBusy] = useState(false);
 
   useEffect(() => {
     void refreshAll();
@@ -95,6 +103,8 @@ export function AppShell() {
       const next = await searchAcrossSessions(searchQuery);
       setSearchResults(next);
       setSearchMessage(next.total_matches ? `Found ${next.total_matches} matches.` : "No matches found.");
+    } catch (error) {
+      setSearchMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSearching(false);
     }
@@ -144,16 +154,73 @@ export function AppShell() {
   }
 
   async function handleNewRecording() {
-    const invoke = window.__TAURI__?.core?.invoke;
-    if (!invoke) {
-      setStatus("New Recording is available in Tauri desktop mode.");
-      return;
+    setIsRecordingBusy(true);
+    setStatus("Creating and starting microphone recording...");
+    try {
+      const created = await createRecordingSession();
+      setRecordingSession({ ...created, lifecycle_state: "starting" });
+      const started = await startRecordingSession(created.capture_id);
+      setRecordingSession(started);
+      setSelectedCaptureId(started.capture_id);
+      setCaptureId(started.capture_id);
+      setPayload(null);
+      setStatus(`Recording ${started.display_name || started.capture_id}.`);
+      await refreshLibrary();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRecordingBusy(false);
     }
-    const created = await invoke<{ capture_id: string }>("create_session");
-    await refreshLibrary();
-    await refreshRecentCaptures();
-    setStatus(`Created new recording session: ${created.capture_id}`);
-    await loadCapture(created.capture_id);
+  }
+
+  async function handlePauseRecording() {
+    if (!recordingSession) return;
+    setIsRecordingBusy(true);
+    try {
+      const paused = await pauseRecordingSession(recordingSession.capture_id);
+      setRecordingSession(paused);
+      setStatus(`Paused ${paused.display_name || paused.capture_id}.`);
+      await refreshLibrary();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
+  }
+
+  async function handleResumeRecording() {
+    if (!recordingSession) return;
+    setIsRecordingBusy(true);
+    try {
+      const resumed = await resumeRecordingSession(recordingSession.capture_id);
+      setRecordingSession(resumed);
+      setStatus(`Recording ${resumed.display_name || resumed.capture_id}.`);
+      await refreshLibrary();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
+  }
+
+  async function handleStopRecording() {
+    if (!recordingSession) return;
+    setIsRecordingBusy(true);
+    setStatus("Stopping and processing recording...");
+    try {
+      const stopped = await stopRecordingSession(recordingSession.capture_id);
+      setRecordingSession(stopped);
+      await refreshAll();
+      if (stopped.lifecycle_state === "review_ready" || stopped.lifecycle_state === "reviewed" || stopped.lifecycle_state === "exported") {
+        await loadCapture(stopped.capture_id);
+      } else {
+        setStatus(stopped.last_error || `${stopped.display_name || stopped.capture_id} is ${stopped.lifecycle_state}.`);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
   }
 
   const filteredLibrary = useMemo(() => library, [library]);
@@ -165,11 +232,36 @@ export function AppShell() {
         <h1>Session Library + Search</h1>
         <p className="hero-copy">Browse every session, search outcomes across meeting history, and track carry-forward actions locally.</p>
         <div className="segmented-control">
-          <button className="active" onClick={() => void handleNewRecording()}>New Recording</button>
+          <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>New Recording</button>
           {(["review", "library", "search", "actions", "memory"] as WorkspaceTab[]).map((tab) => (
             <button key={tab} className={tab === activeTab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>
           ))}
         </div>
+        {recordingSession && (
+          <div className="capture-picker recording-strip">
+            <div>
+              <p className="eyebrow">Current recording</p>
+              <strong>{recordingSession.display_name || recordingSession.capture_id}</strong>
+              <p className="capture-row-meta">{recordingSession.capture_id}</p>
+            </div>
+            <div className="badge-row">
+              <span className={`status-pill session-${recordingSession.lifecycle_state}`}>{recordingSession.lifecycle_state}</span>
+              <span className="status-pill subtle">Microphone only</span>
+            </div>
+            {recordingSession.last_error ? <p className="error-text">{recordingSession.last_error}</p> : null}
+            <div className="recording-controls">
+              {recordingSession.lifecycle_state === "recording" && (
+                <button className="secondary-button" onClick={() => void handlePauseRecording()} disabled={isRecordingBusy}>Pause</button>
+              )}
+              {recordingSession.lifecycle_state === "paused" && (
+                <button onClick={() => void handleResumeRecording()} disabled={isRecordingBusy}>Resume</button>
+              )}
+              {(recordingSession.lifecycle_state === "recording" || recordingSession.lifecycle_state === "paused") && (
+                <button onClick={() => void handleStopRecording()} disabled={isRecordingBusy}>Stop and Process</button>
+              )}
+            </div>
+          </div>
+        )}
         <p className="status-line">{status}</p>
       </section>
 

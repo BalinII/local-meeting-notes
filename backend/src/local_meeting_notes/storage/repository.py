@@ -436,6 +436,33 @@ def search_capture_content(
             UNION ALL
 
             SELECT
+                meetings.capture_id,
+                meetings.title,
+                meetings.status,
+                'session' AS item_type,
+                'capture_id' AS field_name,
+                meetings.capture_id AS content,
+                meetings.updated_at AS item_updated_at
+            FROM meetings
+            WHERE meetings.capture_id <> ''
+
+            UNION ALL
+
+            SELECT
+                transcript_segments.capture_id,
+                meetings.title,
+                meetings.status,
+                'transcript' AS item_type,
+                COALESCE(transcript_segments.speaker_label, 'transcript') AS field_name,
+                transcript_segments.content AS content,
+                meetings.updated_at AS item_updated_at
+            FROM transcript_segments
+            INNER JOIN meetings ON meetings.capture_id = transcript_segments.capture_id
+            WHERE transcript_segments.content IS NOT NULL
+
+            UNION ALL
+
+            SELECT
                 summaries.capture_id,
                 meetings.title,
                 meetings.status,
@@ -445,6 +472,20 @@ def search_capture_content(
                 COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
             FROM summaries
             INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
+
+            UNION ALL
+
+            SELECT
+                summaries.capture_id,
+                meetings.title,
+                meetings.status,
+                'summary' AS item_type,
+                summaries.summary_type || '_evidence' AS field_name,
+                summaries.evidence_snippet AS content,
+                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
+            FROM summaries
+            INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
+            WHERE summaries.evidence_snippet IS NOT NULL
 
             UNION ALL
 
@@ -462,6 +503,20 @@ def search_capture_content(
             UNION ALL
 
             SELECT
+                actions.capture_id,
+                meetings.title,
+                meetings.status,
+                'action' AS item_type,
+                'action_evidence' AS field_name,
+                actions.evidence_snippet AS content,
+                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM actions
+            INNER JOIN meetings ON meetings.capture_id = actions.capture_id
+            WHERE actions.evidence_snippet IS NOT NULL
+
+            UNION ALL
+
+            SELECT
                 decisions.capture_id,
                 meetings.title,
                 meetings.status,
@@ -475,6 +530,20 @@ def search_capture_content(
             UNION ALL
 
             SELECT
+                decisions.capture_id,
+                meetings.title,
+                meetings.status,
+                'decision' AS item_type,
+                'decision_evidence' AS field_name,
+                decisions.evidence_snippet AS content,
+                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM decisions
+            INNER JOIN meetings ON meetings.capture_id = decisions.capture_id
+            WHERE decisions.evidence_snippet IS NOT NULL
+
+            UNION ALL
+
+            SELECT
                 follow_ups.capture_id,
                 meetings.title,
                 meetings.status,
@@ -484,6 +553,20 @@ def search_capture_content(
                 COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
             FROM follow_ups
             INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
+
+            UNION ALL
+
+            SELECT
+                follow_ups.capture_id,
+                meetings.title,
+                meetings.status,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.follow_up_type || '_evidence' AS field_name,
+                follow_ups.evidence_snippet AS content,
+                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
+            WHERE follow_ups.evidence_snippet IS NOT NULL
         )
         SELECT
             capture_id,
@@ -493,9 +576,9 @@ def search_capture_content(
             field_name,
             content,
             item_updated_at,
-            REPLACE(LOWER(content), CHAR(10), ' ') AS lowered_content
+            REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') AS lowered_content
         FROM searchable
-        WHERE lowered_content LIKE ?
+        WHERE REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') LIKE ?
         ORDER BY item_updated_at DESC, capture_id DESC
         LIMIT ?
         """,
@@ -516,10 +599,65 @@ def update_workspace_item_status(
         f"UPDATE {table_name} SET status = ?, reviewed_at = ? WHERE id = ?",
         (workflow_status, reviewed_at, item_id),
     )
-    return connection.execute(
-        f"SELECT * FROM {table_name} WHERE id = ?",
-        (item_id,),
-    ).fetchone()
+    if item_type == "action":
+        return connection.execute(
+            """
+            SELECT
+                actions.id AS id,
+                'action' AS item_type,
+                actions.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                actions.description AS description,
+                actions.owner_name AS owner_name,
+                actions.status AS workflow_state,
+                actions.evidence_snippet AS evidence_snippet,
+                actions.start_offset_seconds AS start_offset_seconds,
+                actions.end_offset_seconds AS end_offset_seconds,
+                actions.provider_name AS provider_name,
+                actions.model_name AS model_name,
+                actions.generated_at AS generated_at,
+                actions.review_status AS review_status,
+                actions.reviewed_description AS reviewed_description,
+                actions.reviewed_owner_name AS reviewed_owner_name,
+                actions.reviewed_at AS reviewed_at
+            FROM actions
+            INNER JOIN meetings ON meetings.id = actions.meeting_id
+            WHERE actions.id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    if item_type == "follow_up":
+        return connection.execute(
+            """
+            SELECT
+                follow_ups.id AS id,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                follow_ups.description AS description,
+                follow_ups.owner_name AS owner_name,
+                follow_ups.status AS workflow_state,
+                follow_ups.evidence_snippet AS evidence_snippet,
+                follow_ups.start_offset_seconds AS start_offset_seconds,
+                follow_ups.end_offset_seconds AS end_offset_seconds,
+                follow_ups.provider_name AS provider_name,
+                follow_ups.model_name AS model_name,
+                follow_ups.generated_at AS generated_at,
+                follow_ups.review_status AS review_status,
+                follow_ups.reviewed_description AS reviewed_description,
+                follow_ups.reviewed_owner_name AS reviewed_owner_name,
+                follow_ups.reviewed_at AS reviewed_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
+            WHERE follow_ups.id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    return None
 
 
 def update_meeting_fields(

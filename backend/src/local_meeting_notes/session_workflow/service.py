@@ -147,7 +147,7 @@ class SessionWorkflowService:
             connection.commit()
         if row is None:
             raise ValueError(f"No {item_type} found with id {item_id}.")
-        return _hydrate_workspace_item(dict(row) | {"item_type": item_type, "source_display_name": row["capture_id"]})
+        return _hydrate_workspace_item(dict(row))
 
     def finalise_session(self, capture_id: str) -> dict[str, object]:
         bootstrap_database(self.config)
@@ -256,6 +256,21 @@ class SessionWorkflowService:
                 channels=self.config.audio_channels,
                 capture_id=capture_id,
             )
+            capture_status = str(state.get("status") or "")
+            if capture_status != "running":
+                last_error = str(
+                    state.get("last_error")
+                    or state.get("message")
+                    or f"Audio capture did not remain active; startup ended with status '{capture_status or 'unknown'}'."
+                )
+                update_meeting_fields(
+                    connection,
+                    capture_id,
+                    updated_at=now,
+                    last_error=last_error,
+                )
+                connection.commit()
+                raise RuntimeError(last_error)
             update_meeting_fields(
                 connection,
                 capture_id,

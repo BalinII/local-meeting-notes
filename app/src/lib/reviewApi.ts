@@ -74,6 +74,21 @@ export type SessionLibraryEntry = {
   models: string[];
 };
 
+export type SessionOverview = SessionLibraryEntry & {
+  id?: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  recorded_seconds?: number;
+  latest_provider_name?: string | null;
+  latest_model_name?: string | null;
+  last_error?: string | null;
+  active_capture?: {
+    capture_id?: string | null;
+    status?: string | null;
+    last_error?: string | null;
+  } | null;
+};
+
 export type SearchMatch = {
   item_type: string;
   field_name: string;
@@ -150,6 +165,44 @@ export async function listSessionLibrary(): Promise<SessionLibraryEntry[]> {
   if (!invoke) return [];
   const payload = await invoke<{ sessions: SessionLibraryEntry[] }>("session_library");
   return payload.sessions || [];
+}
+
+export async function createRecordingSession(): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("New Recording is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("create_session", { title: null });
+}
+
+export async function startRecordingSession(captureId: string): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Recording is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("start_session", {
+    captureId,
+    includeLoopback: false,
+    includeMicrophone: true,
+  });
+}
+
+export async function pauseRecordingSession(captureId: string): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Recording is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("pause_session", { captureId });
+}
+
+export async function resumeRecordingSession(captureId: string): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Recording is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("resume_session", {
+    captureId,
+    includeLoopback: false,
+    includeMicrophone: true,
+  });
+}
+
+export async function stopRecordingSession(captureId: string): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Recording is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("stop_session", { captureId });
 }
 
 export async function searchAcrossSessions(query: string): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
