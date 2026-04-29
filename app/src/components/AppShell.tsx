@@ -176,6 +176,7 @@ export function AppShell() {
   async function handlePauseRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
+    setStatus("Pausing recording...");
     try {
       const paused = await pauseRecordingSession(recordingSession.capture_id);
       setRecordingSession(paused);
@@ -191,6 +192,7 @@ export function AppShell() {
   async function handleResumeRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
+    setStatus("Resuming microphone recording...");
     try {
       const resumed = await resumeRecordingSession(recordingSession.capture_id);
       setRecordingSession(resumed);

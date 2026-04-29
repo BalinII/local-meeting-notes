@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from local_meeting_notes.config import load_config
@@ -54,6 +55,14 @@ class FakeAudioCaptureService:
 
     def status(self) -> dict[str, object]:
         return self.current
+
+
+class FakeSlowStoppingAudioCaptureService(FakeAudioCaptureService):
+    def stop_capture(self, timeout_seconds: float = 10.0) -> dict[str, object]:
+        return {
+            "capture_id": self.current.get("capture_id"),
+            "status": "stopping",
+        }
 
 
 class FakeNoopService:
@@ -212,6 +221,32 @@ def test_pause_wrong_capture_does_not_stop_active_capture(local_tmp_dir) -> None
     assert audio.current["capture_id"] == active["capture_id"]
 
 
+def test_pause_waits_for_capture_to_stop_before_marking_session_paused(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    audio = FakeSlowStoppingAudioCaptureService()
+    service = SessionWorkflowService(
+        config,
+        audio_capture=audio,  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Slow Pause")
+    service.start_session(created["capture_id"])
+
+    try:
+        service.pause_session(created["capture_id"])
+    except RuntimeError as exc:
+        assert "still stopping" in str(exc)
+    else:
+        raise AssertionError("pause_session should not mark a session paused while audio is still stopping")
+
+    assert service.get_session(created["capture_id"])["lifecycle_state"] == "recording"
+
+
 def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     bootstrap_database(config)
@@ -351,6 +386,60 @@ def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
 
     refreshed = service.dashboard_payload()["action_items"][0]
     assert refreshed["workflow_state"] == "carried_forward"
+
+
+def test_search_handles_legacy_summary_schema_without_review_columns(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    config.database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(config.database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id INTEGER NOT NULL,
+                capture_id TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                summary_type TEXT NOT NULL DEFAULT 'mock',
+                evidence_snippet TEXT,
+                provider_name TEXT NOT NULL DEFAULT 'heuristic',
+                model_name TEXT,
+                generated_at TEXT
+            )
+            """
+        )
+        connection.commit()
+
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Legacy Summary Search")
+    with connection_context(config.database_path) as connection:
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                title="Executive Summary",
+                content="Legacy databases should still support local-first search.",
+                summary_type="executive",
+                evidence_snippet="Search should work after summary schema migration.",
+            ),
+        )
+        connection.commit()
+
+    result = service.search_workspace("local-first")
+
+    assert result["total_matches"] >= 1
+    assert any(group["capture_id"] == created["capture_id"] for group in result["sessions"])
 
 
 def test_action_workflow_updates_persist_all_supported_states(local_tmp_dir) -> None:

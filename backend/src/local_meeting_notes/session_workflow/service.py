@@ -296,7 +296,14 @@ class SessionWorkflowService:
         active_capture = self.audio_capture.status()
         if active_capture.get("capture_id") != capture_id:
             raise ValueError(f"Active audio capture does not match session '{capture_id}'.")
-        stopped_state = self.audio_capture.stop_capture()
+        stopped_state = self.audio_capture.stop_capture(
+            timeout_seconds=max(10.0, float(self.config.audio_chunk_seconds) + 5.0)
+        )
+        stopped_status = str(stopped_state.get("status") or "")
+        if stopped_status not in {"stopped", "failed"}:
+            raise RuntimeError(
+                "Audio capture is still stopping. Wait for the current chunk to finish before resuming."
+            )
         with connection_context(self.config.database_path) as connection:
             row = self._require_session(connection, capture_id)
             update_meeting_fields(
