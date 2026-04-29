@@ -332,6 +332,11 @@ textarea {
   margin-bottom: 14px;
 }
 
+.recording-strip {
+  display: grid;
+  gap: 10px;
+}
+
 .note-card {
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 18px;
@@ -489,6 +494,16 @@ textarea {
 .status-pill.action-done {
   background: #dcf6e8;
   color: #1d633a;
+}
+
+.status-pill.action-dismissed {
+  background: #fde3df;
+  color: #8b2d22;
+}
+
+.status-pill.action-carried_forward {
+  background: #e0efff;
+  color: #245984;
 }
 
 .workspace-panel .panel-heading {

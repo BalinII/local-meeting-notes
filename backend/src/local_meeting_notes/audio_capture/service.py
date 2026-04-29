@@ -240,7 +240,7 @@ class AudioCaptureService:
             time.sleep(0.25)
 
         refreshed = read_capture_state(self.config.audio_capture_state_path) or state
-        refreshed["status"] = refreshed.get("status", "stopping")
+        refreshed["status"] = "stopping"
         refreshed["stop_requested_at"] = _utc_iso()
         write_capture_state(self.config.audio_capture_state_path, refreshed)
         return refreshed

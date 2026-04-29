@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from local_meeting_notes.config import load_config
-from local_meeting_notes.models import ActionRecord, FollowUpRecord
+from local_meeting_notes.models import ActionRecord, DecisionRecord, FollowUpRecord, SummaryRecord, TranscriptSegmentRecord
 from local_meeting_notes.session_workflow.service import SessionWorkflowService
 from local_meeting_notes.storage.database import bootstrap_database, connection_context
-from local_meeting_notes.storage.repository import insert_action, insert_follow_up, update_meeting_fields
+from local_meeting_notes.storage.repository import (
+    insert_action,
+    insert_decision,
+    insert_follow_up,
+    insert_summary,
+    insert_transcript_segment,
+    update_meeting_fields,
+)
 
 
 class FakeAudioCaptureService:
@@ -47,6 +55,14 @@ class FakeAudioCaptureService:
 
     def status(self) -> dict[str, object]:
         return self.current
+
+
+class FakeSlowStoppingAudioCaptureService(FakeAudioCaptureService):
+    def stop_capture(self, timeout_seconds: float = 10.0) -> dict[str, object]:
+        return {
+            "capture_id": self.current.get("capture_id"),
+            "status": "stopping",
+        }
 
 
 class FakeNoopService:
@@ -205,6 +221,32 @@ def test_pause_wrong_capture_does_not_stop_active_capture(local_tmp_dir) -> None
     assert audio.current["capture_id"] == active["capture_id"]
 
 
+def test_pause_waits_for_capture_to_stop_before_marking_session_paused(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    audio = FakeSlowStoppingAudioCaptureService()
+    service = SessionWorkflowService(
+        config,
+        audio_capture=audio,  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Slow Pause")
+    service.start_session(created["capture_id"])
+
+    try:
+        service.pause_session(created["capture_id"])
+    except RuntimeError as exc:
+        assert "still stopping" in str(exc)
+    else:
+        raise AssertionError("pause_session should not mark a session paused while audio is still stopping")
+
+    assert service.get_session(created["capture_id"])["lifecycle_state"] == "recording"
+
+
 def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     bootstrap_database(config)
@@ -255,4 +297,222 @@ def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir
     assert {item["item_type"] for item in items} == {"action", "blocker_risk"}
     assert {item["capture_id"] for item in items} == {created["capture_id"]}
     assert {item["source_display_name"] for item in items} == {"Workspace Source"}
-    assert {item["workflow_state"] for item in items} == {"open", "blocked"}
+    assert {item["workflow_state"] for item in items} == {"open"}
+
+
+def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Roadmap Planning")
+    with connection_context(config.database_path) as connection:
+        meeting_id = int(created["id"])
+        insert_transcript_segment(
+            connection,
+            TranscriptSegmentRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=str(created["capture_id"]),
+                source_chunk_path="chunk.wav",
+                transcription_status="completed",
+                speaker_label="Ben",
+                content="Ben said the meeting should stay local-first and review the decision.",
+                start_offset_seconds=0,
+                end_offset_seconds=8,
+            ),
+        )
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=str(created["capture_id"]),
+                title="Executive Summary",
+                content="The meeting focused on local-first review and decision tracking.",
+                summary_type="executive",
+                evidence_snippet="Ben said the meeting should stay local-first.",
+            ),
+        )
+        insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=str(created["capture_id"]),
+                description="Carry roadmap tasks to next sprint planning.",
+                owner_name="Unconfirmed speaker",
+                status="open",
+                evidence_snippet="Action: carry roadmap tasks.",
+            ),
+        )
+        insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id=str(created["capture_id"]),
+                description="Keep the meeting notes workflow local-first.",
+                evidence_snippet="Decision: keep the workflow local-first.",
+            ),
+        )
+        connection.commit()
+
+    library = service.session_library()
+    assert any(session["capture_id"] == created["capture_id"] for session in library["sessions"])
+
+    search = service.search_workspace("roadmap")
+    assert search["total_matches"] >= 1
+    assert any(group["capture_id"] == created["capture_id"] for group in search["sessions"])
+    for query in ("local-first", "Ben", "review", "decision", "meeting"):
+        result = service.search_workspace(query)
+        assert result["total_matches"] >= 1
+        assert any(group["capture_id"] == created["capture_id"] for group in result["sessions"])
+
+    item = service.dashboard_payload()["action_items"][0]
+    updated = service.update_action_workflow_state(
+        item_type="action",
+        item_id=int(item["id"]),
+        workflow_status="carried_forward",
+    )
+    assert updated["workflow_state"] == "carried_forward"
+
+    refreshed = service.dashboard_payload()["action_items"][0]
+    assert refreshed["workflow_state"] == "carried_forward"
+
+
+def test_search_handles_legacy_summary_schema_without_review_columns(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    config.database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(config.database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id INTEGER NOT NULL,
+                capture_id TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                summary_type TEXT NOT NULL DEFAULT 'mock',
+                evidence_snippet TEXT,
+                provider_name TEXT NOT NULL DEFAULT 'heuristic',
+                model_name TEXT,
+                generated_at TEXT
+            )
+            """
+        )
+        connection.commit()
+
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Legacy Summary Search")
+    with connection_context(config.database_path) as connection:
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                title="Executive Summary",
+                content="Legacy databases should still support local-first search.",
+                summary_type="executive",
+                evidence_snippet="Search should work after summary schema migration.",
+            ),
+        )
+        connection.commit()
+
+    result = service.search_workspace("local-first")
+
+    assert result["total_matches"] >= 1
+    assert any(group["capture_id"] == created["capture_id"] for group in result["sessions"])
+
+
+def test_action_workflow_updates_persist_all_supported_states(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Workflow States")
+    with connection_context(config.database_path) as connection:
+        action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                description="Track the follow-up workflow state.",
+                owner_name="Unconfirmed speaker",
+                status="open",
+                evidence_snippet="Action: track workflow state.",
+            ),
+        )
+        follow_up_id = insert_follow_up(
+            connection,
+            FollowUpRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                description="Confirm whether workflow state refreshes correctly.",
+                follow_up_type="follow_up",
+                owner_name="Unknown",
+                status="open",
+                evidence_snippet="Follow up: confirm workflow state refresh.",
+            ),
+        )
+        connection.commit()
+
+    for workflow_status in ("open", "done", "dismissed", "carried_forward"):
+        action = service.update_action_workflow_state(
+            item_type="action",
+            item_id=action_id,
+            workflow_status=workflow_status,
+        )
+        follow_up = service.update_action_workflow_state(
+            item_type="follow_up",
+            item_id=follow_up_id,
+            workflow_status=workflow_status,
+        )
+
+        assert action["workflow_state"] == workflow_status
+        assert follow_up["workflow_state"] == workflow_status
+
+        refreshed = service.dashboard_payload()["action_items"]
+        states_by_key = {(item["item_type"], item["id"]): item["workflow_state"] for item in refreshed}
+        assert states_by_key[("action", action_id)] == workflow_status
+        assert states_by_key[("follow_up", follow_up_id)] == workflow_status
+
+    reopened_service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    reopened_items = reopened_service.dashboard_payload()["action_items"]
+    reopened_states = {(item["item_type"], item["id"]): item["workflow_state"] for item in reopened_items}
+    assert reopened_states[("action", action_id)] == "carried_forward"
+    assert reopened_states[("follow_up", follow_up_id)] == "carried_forward"

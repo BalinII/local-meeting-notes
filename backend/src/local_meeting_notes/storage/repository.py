@@ -325,6 +325,32 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
             UNION ALL
 
             SELECT
+                decisions.id AS id,
+                'decision' AS item_type,
+                decisions.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                decisions.description AS description,
+                NULL AS owner_name,
+                'open' AS workflow_state,
+                decisions.evidence_snippet AS evidence_snippet,
+                decisions.start_offset_seconds AS start_offset_seconds,
+                decisions.end_offset_seconds AS end_offset_seconds,
+                decisions.provider_name AS provider_name,
+                decisions.model_name AS model_name,
+                decisions.generated_at AS generated_at,
+                decisions.review_status AS review_status,
+                decisions.reviewed_description AS reviewed_description,
+                decisions.reviewed_owner_name AS reviewed_owner_name,
+                decisions.reviewed_at AS reviewed_at
+            FROM decisions
+            INNER JOIN meetings ON meetings.id = decisions.meeting_id
+            WHERE decisions.review_status <> 'rejected'
+
+            UNION ALL
+
+            SELECT
                 follow_ups.id AS id,
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.capture_id AS capture_id,
@@ -353,6 +379,285 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
         """,
         (limit,),
     ).fetchall()
+
+
+def fetch_session_library_rows(connection: sqlite3.Connection, limit: int = 500) -> list[sqlite3.Row]:
+    safe_limit = max(1, min(int(limit), 1000))
+    return connection.execute(
+        """
+        SELECT
+            meetings.*,
+            GROUP_CONCAT(DISTINCT summaries.provider_name) AS summary_providers,
+            GROUP_CONCAT(DISTINCT summaries.model_name) AS summary_models,
+            GROUP_CONCAT(DISTINCT actions.provider_name) AS action_providers,
+            GROUP_CONCAT(DISTINCT actions.model_name) AS action_models,
+            GROUP_CONCAT(DISTINCT decisions.provider_name) AS decision_providers,
+            GROUP_CONCAT(DISTINCT decisions.model_name) AS decision_models,
+            GROUP_CONCAT(DISTINCT follow_ups.provider_name) AS follow_up_providers,
+            GROUP_CONCAT(DISTINCT follow_ups.model_name) AS follow_up_models
+        FROM meetings
+        LEFT JOIN summaries ON summaries.capture_id = meetings.capture_id
+        LEFT JOIN actions ON actions.capture_id = meetings.capture_id
+        LEFT JOIN decisions ON decisions.capture_id = meetings.capture_id
+        LEFT JOIN follow_ups ON follow_ups.capture_id = meetings.capture_id
+        WHERE meetings.capture_id <> ''
+        GROUP BY meetings.id
+        ORDER BY COALESCE(meetings.updated_at, meetings.created_at, meetings.started_at) DESC, meetings.id DESC
+        LIMIT ?
+        """,
+        (safe_limit,),
+    ).fetchall()
+
+
+def search_capture_content(
+    connection: sqlite3.Connection,
+    query: str,
+    limit: int = 120,
+) -> list[sqlite3.Row]:
+    cleaned_query = query.strip().lower()
+    if not cleaned_query:
+        return []
+    like_query = f"%{cleaned_query}%"
+    safe_limit = max(1, min(int(limit), 500))
+    return connection.execute(
+        """
+        WITH searchable AS (
+            SELECT
+                meetings.capture_id AS capture_id,
+                meetings.title AS session_display_name,
+                meetings.status AS lifecycle_state,
+                'session' AS item_type,
+                'display_name' AS field_name,
+                meetings.title AS content,
+                meetings.updated_at AS item_updated_at
+            FROM meetings
+            WHERE meetings.capture_id <> ''
+
+            UNION ALL
+
+            SELECT
+                meetings.capture_id,
+                meetings.title,
+                meetings.status,
+                'session' AS item_type,
+                'capture_id' AS field_name,
+                meetings.capture_id AS content,
+                meetings.updated_at AS item_updated_at
+            FROM meetings
+            WHERE meetings.capture_id <> ''
+
+            UNION ALL
+
+            SELECT
+                transcript_segments.capture_id,
+                meetings.title,
+                meetings.status,
+                'transcript' AS item_type,
+                COALESCE(transcript_segments.speaker_label, 'transcript') AS field_name,
+                transcript_segments.content AS content,
+                meetings.updated_at AS item_updated_at
+            FROM transcript_segments
+            INNER JOIN meetings ON meetings.capture_id = transcript_segments.capture_id
+            WHERE transcript_segments.content IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                summaries.capture_id,
+                meetings.title,
+                meetings.status,
+                'summary' AS item_type,
+                summaries.summary_type AS field_name,
+                summaries.content AS content,
+                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
+            FROM summaries
+            INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
+
+            UNION ALL
+
+            SELECT
+                summaries.capture_id,
+                meetings.title,
+                meetings.status,
+                'summary' AS item_type,
+                summaries.summary_type || '_evidence' AS field_name,
+                summaries.evidence_snippet AS content,
+                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
+            FROM summaries
+            INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
+            WHERE summaries.evidence_snippet IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                actions.capture_id,
+                meetings.title,
+                meetings.status,
+                'action' AS item_type,
+                'actions' AS field_name,
+                COALESCE(actions.reviewed_description, actions.description) AS content,
+                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM actions
+            INNER JOIN meetings ON meetings.capture_id = actions.capture_id
+
+            UNION ALL
+
+            SELECT
+                actions.capture_id,
+                meetings.title,
+                meetings.status,
+                'action' AS item_type,
+                'action_evidence' AS field_name,
+                actions.evidence_snippet AS content,
+                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM actions
+            INNER JOIN meetings ON meetings.capture_id = actions.capture_id
+            WHERE actions.evidence_snippet IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                decisions.capture_id,
+                meetings.title,
+                meetings.status,
+                'decision' AS item_type,
+                'decisions' AS field_name,
+                COALESCE(decisions.reviewed_description, decisions.description) AS content,
+                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM decisions
+            INNER JOIN meetings ON meetings.capture_id = decisions.capture_id
+
+            UNION ALL
+
+            SELECT
+                decisions.capture_id,
+                meetings.title,
+                meetings.status,
+                'decision' AS item_type,
+                'decision_evidence' AS field_name,
+                decisions.evidence_snippet AS content,
+                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at
+            FROM decisions
+            INNER JOIN meetings ON meetings.capture_id = decisions.capture_id
+            WHERE decisions.evidence_snippet IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                follow_ups.capture_id,
+                meetings.title,
+                meetings.status,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.follow_up_type AS field_name,
+                COALESCE(follow_ups.reviewed_description, follow_ups.description) AS content,
+                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
+
+            UNION ALL
+
+            SELECT
+                follow_ups.capture_id,
+                meetings.title,
+                meetings.status,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.follow_up_type || '_evidence' AS field_name,
+                follow_ups.evidence_snippet AS content,
+                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
+            WHERE follow_ups.evidence_snippet IS NOT NULL
+        )
+        SELECT
+            capture_id,
+            session_display_name,
+            lifecycle_state,
+            item_type,
+            field_name,
+            content,
+            item_updated_at,
+            REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') AS lowered_content
+        FROM searchable
+        WHERE REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') LIKE ?
+        ORDER BY item_updated_at DESC, capture_id DESC
+        LIMIT ?
+        """,
+        (like_query, safe_limit),
+    ).fetchall()
+
+
+def update_workspace_item_status(
+    connection: sqlite3.Connection,
+    *,
+    item_type: str,
+    item_id: int,
+    workflow_status: str,
+    reviewed_at: str,
+) -> sqlite3.Row | None:
+    table_name = _table_name_for_extracted_item(item_type)
+    connection.execute(
+        f"UPDATE {table_name} SET status = ?, reviewed_at = ? WHERE id = ?",
+        (workflow_status, reviewed_at, item_id),
+    )
+    if item_type == "action":
+        return connection.execute(
+            """
+            SELECT
+                actions.id AS id,
+                'action' AS item_type,
+                actions.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                actions.description AS description,
+                actions.owner_name AS owner_name,
+                actions.status AS workflow_state,
+                actions.evidence_snippet AS evidence_snippet,
+                actions.start_offset_seconds AS start_offset_seconds,
+                actions.end_offset_seconds AS end_offset_seconds,
+                actions.provider_name AS provider_name,
+                actions.model_name AS model_name,
+                actions.generated_at AS generated_at,
+                actions.review_status AS review_status,
+                actions.reviewed_description AS reviewed_description,
+                actions.reviewed_owner_name AS reviewed_owner_name,
+                actions.reviewed_at AS reviewed_at
+            FROM actions
+            INNER JOIN meetings ON meetings.id = actions.meeting_id
+            WHERE actions.id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    if item_type == "follow_up":
+        return connection.execute(
+            """
+            SELECT
+                follow_ups.id AS id,
+                follow_ups.follow_up_type AS item_type,
+                follow_ups.capture_id AS capture_id,
+                meetings.title AS source_display_name,
+                meetings.status AS source_lifecycle_state,
+                meetings.updated_at AS source_updated_at,
+                follow_ups.description AS description,
+                follow_ups.owner_name AS owner_name,
+                follow_ups.status AS workflow_state,
+                follow_ups.evidence_snippet AS evidence_snippet,
+                follow_ups.start_offset_seconds AS start_offset_seconds,
+                follow_ups.end_offset_seconds AS end_offset_seconds,
+                follow_ups.provider_name AS provider_name,
+                follow_ups.model_name AS model_name,
+                follow_ups.generated_at AS generated_at,
+                follow_ups.review_status AS review_status,
+                follow_ups.reviewed_description AS reviewed_description,
+                follow_ups.reviewed_owner_name AS reviewed_owner_name,
+                follow_ups.reviewed_at AS reviewed_at
+            FROM follow_ups
+            INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
+            WHERE follow_ups.id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    return None
 
 
 def update_meeting_fields(

@@ -56,6 +56,10 @@ SUMMARY_MIGRATIONS = {
     "provider_name": "ALTER TABLE summaries ADD COLUMN provider_name TEXT NOT NULL DEFAULT 'heuristic'",
     "model_name": "ALTER TABLE summaries ADD COLUMN model_name TEXT",
     "generated_at": "ALTER TABLE summaries ADD COLUMN generated_at TEXT",
+    "review_status": "ALTER TABLE summaries ADD COLUMN review_status TEXT NOT NULL DEFAULT 'generated'",
+    "reviewed_description": "ALTER TABLE summaries ADD COLUMN reviewed_description TEXT",
+    "reviewed_owner_name": "ALTER TABLE summaries ADD COLUMN reviewed_owner_name TEXT",
+    "reviewed_at": "ALTER TABLE summaries ADD COLUMN reviewed_at TEXT",
 }
 
 ACTION_MIGRATIONS = {

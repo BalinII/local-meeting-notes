@@ -70,6 +70,7 @@ class ExportService:
             "exported_at": _now_timestamp(),
             "metadata": {
                 "display_name": str(meeting["title"]) if meeting is not None else None,
+                "content_state": _content_state_for_meeting(meeting),
                 "providers": providers,
                 "latest_generated_at": max(generated_values) if generated_values else None,
                 "summary_count": len(summaries),
@@ -181,6 +182,17 @@ def _render_payload(*, payload: dict[str, Any], export_format: str) -> str:
     if export_format == "html":
         return render_html(payload)
     raise ValueError(f"Unsupported export format: {export_format}")
+
+
+def _content_state_for_meeting(meeting: Any) -> str:
+    if meeting is None:
+        return "generated"
+    state = str(meeting["status"] or "generated")
+    if state == "final":
+        return "final"
+    if state in {"reviewed", "exported"} or bool(meeting["has_reviewed_items"]):
+        return "reviewed"
+    return "generated"
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
