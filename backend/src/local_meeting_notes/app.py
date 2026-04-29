@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     session_subparsers.add_parser("stop", help="Stop the current mock meeting session.")
     session_subparsers.add_parser("list", help="List recent persisted recording sessions.")
+    session_subparsers.add_parser("library", help="List full session library payload.")
     session_create = session_subparsers.add_parser("create", help="Create a new recording session.")
     session_create.add_argument("--title")
     session_get = session_subparsers.add_parser("get", help="Get a persisted recording session.")
@@ -78,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     session_delete_audio.add_argument("--capture-id", required=True)
     session_archive = session_subparsers.add_parser("archive", help="Archive a session.")
     session_archive.add_argument("--capture-id", required=True)
+    session_finalise = session_subparsers.add_parser("finalise", help="Mark a reviewed session as final.")
+    session_finalise.add_argument("--capture-id", required=True)
+    session_search = session_subparsers.add_parser("search", help="Search across persisted sessions and outcomes.")
+    session_search.add_argument("--query", required=True)
+    session_search.add_argument("--limit", type=int, default=120)
     session_subparsers.add_parser("retention-show", help="Show persisted retention settings.")
     session_retention_update = session_subparsers.add_parser("retention-update", help="Update retention settings.")
     session_retention_update.add_argument("--raw-audio-retention-days", type=int, required=True)
@@ -161,6 +167,18 @@ def build_parser() -> argparse.ArgumentParser:
         "list", help="List extracted actions, decisions, and follow-ups for a capture."
     )
     actions_list.add_argument("--capture-id", required=True)
+    actions_workspace = actions_subparsers.add_parser("workspace", help="List global action tracker items.")
+    actions_workspace.add_argument("--limit", type=int, default=200)
+    actions_update = actions_subparsers.add_parser("update-workflow", help="Update action/follow-up workflow state.")
+    actions_update.add_argument("--item-type", choices=("action", "follow_up"), required=True)
+    actions_update.add_argument("--item-id", type=int, required=True)
+    actions_update.add_argument("--workflow-status", choices=("open", "done", "dismissed", "carried_forward"), required=True)
+
+    memory_parser = subparsers.add_parser("memory", help="Cross-session memory views.")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
+    memory_list = memory_subparsers.add_parser("list", help="List memory items by category.")
+    memory_list.add_argument("--item-type", choices=("decisions", "blockers_risks", "open_questions"), required=True)
+    memory_list.add_argument("--limit", type=int, default=200)
 
     llm_parser = subparsers.add_parser("llm", help="Local LLM runtime commands.")
     llm_subparsers = llm_parser.add_subparsers(dest="llm_command", required=True)
@@ -656,6 +674,12 @@ def run_session_list() -> int:
     return 0
 
 
+def run_session_library() -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.session_library(), ensure_ascii=False))
+    return 0
+
+
 def run_session_create(title: str | None = None) -> int:
     service = _get_session_workflow_service()
     print(json.dumps(service.create_session(title), ensure_ascii=False))
@@ -769,6 +793,23 @@ def run_session_archive(capture_id: str) -> int:
     return 0
 
 
+def run_session_finalise(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.finalise_session(capture_id)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_search(query: str, limit: int) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.search_workspace(query, limit=limit), ensure_ascii=False))
+    return 0
+
+
 def run_session_retention_show() -> int:
     service = _get_session_workflow_service()
     print(json.dumps(service.dashboard_payload()["settings"], ensure_ascii=False))
@@ -795,6 +836,34 @@ def run_session_cleanup() -> int:
     return 0
 
 
+def run_actions_workspace(limit: int) -> int:
+    service = _get_session_workflow_service()
+    payload = service.dashboard_payload()
+    print(json.dumps({"items": payload["action_items"][: max(1, limit)]}, ensure_ascii=False))
+    return 0
+
+
+def run_actions_update_workflow(item_type: str, item_id: int, workflow_status: str) -> int:
+    service = _get_session_workflow_service()
+    try:
+        payload = service.update_action_workflow_state(
+            item_type=item_type,
+            item_id=item_id,
+            workflow_status=workflow_status,
+        )
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_memory_list(item_type: str, limit: int) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.memory_view(item_type, limit=limit), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -809,6 +878,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_stop()
     if args.command == "session" and args.session_command == "list":
         return run_session_list()
+    if args.command == "session" and args.session_command == "library":
+        return run_session_library()
     if args.command == "session" and args.session_command == "create":
         return run_session_create(args.title)
     if args.command == "session" and args.session_command == "get":
@@ -829,6 +900,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_delete_audio(args.capture_id)
     if args.command == "session" and args.session_command == "archive":
         return run_session_archive(args.capture_id)
+    if args.command == "session" and args.session_command == "finalise":
+        return run_session_finalise(args.capture_id)
+    if args.command == "session" and args.session_command == "search":
+        return run_session_search(args.query, args.limit)
     if args.command == "session" and args.session_command == "retention-show":
         return run_session_retention_show()
     if args.command == "session" and args.session_command == "retention-update":
@@ -874,6 +949,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_actions_extract(args.capture_id, provider_name=args.provider)
     if args.command == "actions" and args.actions_command == "list":
         return run_actions_list(args.capture_id)
+    if args.command == "actions" and args.actions_command == "workspace":
+        return run_actions_workspace(args.limit)
+    if args.command == "actions" and args.actions_command == "update-workflow":
+        return run_actions_update_workflow(args.item_type, args.item_id, args.workflow_status)
+    if args.command == "memory" and args.memory_command == "list":
+        return run_memory_list(args.item_type, args.limit)
     if args.command == "llm" and args.llm_command == "check":
         return run_llm_check()
     if args.command == "review" and args.review_command == "show":

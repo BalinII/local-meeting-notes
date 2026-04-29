@@ -61,6 +61,44 @@ export type RecentCapture = {
   has_reviewed_items: boolean;
 };
 
+export type SessionLibraryEntry = {
+  capture_id: string;
+  display_name: string;
+  lifecycle_state: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  reviewed_at?: string | null;
+  exported_at?: string | null;
+  reviewed_items_exist?: boolean;
+  providers: string[];
+  models: string[];
+};
+
+export type SearchMatch = {
+  item_type: string;
+  field_name: string;
+  snippet: string;
+};
+
+export type SearchSessionGroup = {
+  capture_id: string;
+  display_name: string;
+  lifecycle_state?: string | null;
+  matches: SearchMatch[];
+};
+
+export type ActionTrackerItem = {
+  id: number;
+  item_type: string;
+  capture_id: string;
+  source_display_name: string;
+  effective_description: string;
+  effective_owner_name?: string | null;
+  review_status: string;
+  workflow_state: "open" | "done" | "dismissed" | "carried_forward";
+  reviewed_at?: string | null;
+};
+
 type TauriGlobal = {
   core?: {
     invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -105,6 +143,49 @@ export async function exportReview(captureId: string, format: "markdown" | "html
     return `Demo mode: export ${format} for ${captureId}`;
   }
   return invoke<string>("export_capture", { captureId, format });
+}
+
+export async function listSessionLibrary(): Promise<SessionLibraryEntry[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return [];
+  const payload = await invoke<{ sessions: SessionLibraryEntry[] }>("session_library");
+  return payload.sessions || [];
+}
+
+export async function searchAcrossSessions(query: string): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return { query, total_matches: 0, sessions: [] };
+  return invoke("session_search", { query, limit: 120 });
+}
+
+export async function finaliseCapture(captureId: string): Promise<void> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return;
+  await invoke("finalise_session", { captureId });
+}
+
+export async function listGlobalActions(): Promise<ActionTrackerItem[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return [];
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200 });
+  return payload.items || [];
+}
+
+export async function updateActionWorkflow(input: {
+  itemType: "action" | "follow_up";
+  itemId: number;
+  workflowStatus: ActionTrackerItem["workflow_state"];
+}): Promise<void> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return;
+  await invoke("update_action_workflow", input);
+}
+
+export async function listMemoryItems(itemType: "decisions" | "blockers_risks" | "open_questions"): Promise<ActionTrackerItem[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return [];
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_memory_items", { itemType, limit: 200 });
+  return payload.items || [];
 }
 
 export async function saveReviewItem(input: {

@@ -24,6 +24,17 @@ fn list_recent_captures(limit: Option<i64>) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
+fn session_library() -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "library"])
+}
+
+#[tauri::command]
+fn session_search(query: String, limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(120).clamp(1, 500).to_string();
+    run_backend_json(&["session", "search", "--query", query.as_str(), "--limit", limit_arg.as_str()])
+}
+
+#[tauri::command]
 fn export_capture(capture_id: String, format: String) -> Result<String, String> {
     let output = run_backend(&[
         "export",
@@ -141,6 +152,38 @@ fn cleanup_retention() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn finalise_session(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "finalise", "--capture-id", capture_id.as_str()])
+}
+
+#[tauri::command]
+fn list_action_tracker_items(limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(200).clamp(1, 500).to_string();
+    run_backend_json(&["actions", "workspace", "--limit", limit_arg.as_str()])
+}
+
+#[tauri::command]
+fn update_action_workflow(item_type: String, item_id: i64, workflow_status: String) -> Result<serde_json::Value, String> {
+    let item_id_arg = item_id.to_string();
+    run_backend_json(&[
+        "actions",
+        "update-workflow",
+        "--item-type",
+        item_type.as_str(),
+        "--item-id",
+        item_id_arg.as_str(),
+        "--workflow-status",
+        workflow_status.as_str(),
+    ])
+}
+
+#[tauri::command]
+fn list_memory_items(item_type: String, limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(200).clamp(1, 500).to_string();
+    run_backend_json(&["memory", "list", "--item-type", item_type.as_str(), "--limit", limit_arg.as_str()])
+}
+
+#[tauri::command]
 fn save_review_item(
     item_type: String,
     item_id: i64,
@@ -228,7 +271,13 @@ pub fn run() {
             cleanup_retention,
             review_capture,
             list_recent_captures,
+            session_library,
+            session_search,
             export_capture,
+            finalise_session,
+            list_action_tracker_items,
+            update_action_workflow,
+            list_memory_items,
             save_review_item
         ])
         .run(tauri::generate_context!())

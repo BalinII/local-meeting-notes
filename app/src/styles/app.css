@@ -491,6 +491,16 @@ textarea {
   color: #1d633a;
 }
 
+.status-pill.action-dismissed {
+  background: #fde3df;
+  color: #8b2d22;
+}
+
+.status-pill.action-carried_forward {
+  background: #e0efff;
+  color: #245984;
+}
+
 .workspace-panel .panel-heading {
   align-items: start;
 }

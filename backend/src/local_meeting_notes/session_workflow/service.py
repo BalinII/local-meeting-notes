@@ -18,10 +18,13 @@ from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
     fetch_app_settings,
     fetch_cross_session_action_items,
+    fetch_session_library_rows,
+    search_capture_content,
     fetch_meeting_by_capture_id,
     fetch_recent_meetings,
     insert_meeting,
     update_meeting_fields,
+    update_workspace_item_status,
     upsert_app_setting,
 )
 from ..summarizer.service import SummarizerService
@@ -43,8 +46,9 @@ class SessionWorkflowService:
         "paused": {"recording", "processing", "archived"},
         "processing": {"review_ready", "processing_failed"},
         "processing_failed": {"processing", "archived"},
-        "review_ready": {"reviewed", "exported", "archived", "recording"},
-        "reviewed": {"exported", "archived", "recording"},
+        "review_ready": {"reviewed", "final", "exported", "archived", "recording"},
+        "reviewed": {"final", "exported", "archived", "recording"},
+        "final": {"exported", "archived", "recording"},
         "exported": {"archived", "recording"},
         "archived": set(),
     }
@@ -86,6 +90,98 @@ class SessionWorkflowService:
             "settings": settings,
             "active_capture": active_capture if active_capture.get("capture_id") else None,
         }
+
+    def session_library(self) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            rows = [dict(row) for row in fetch_session_library_rows(connection)]
+        return {"sessions": [self._hydrate_library_session(row) for row in rows]}
+
+    def search_workspace(self, query: str, limit: int = 120) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            rows = [dict(row) for row in search_capture_content(connection, query=query, limit=limit)]
+        grouped: dict[str, dict[str, object]] = {}
+        for row in rows:
+            capture_id = str(row["capture_id"])
+            group = grouped.setdefault(
+                capture_id,
+                {
+                    "capture_id": capture_id,
+                    "display_name": row.get("session_display_name") or capture_id,
+                    "lifecycle_state": row.get("lifecycle_state"),
+                    "matches": [],
+                },
+            )
+            group["matches"].append(
+                {
+                    "item_type": row.get("item_type"),
+                    "field_name": row.get("field_name"),
+                    "snippet": _build_snippet(str(row.get("content") or ""), query),
+                }
+            )
+        sessions = list(grouped.values())
+        return {"query": query, "total_matches": len(rows), "sessions": sessions}
+
+    def update_action_workflow_state(
+        self,
+        *,
+        item_type: str,
+        item_id: int,
+        workflow_status: str,
+    ) -> dict[str, object]:
+        if workflow_status not in {"open", "done", "dismissed", "carried_forward"}:
+            raise ValueError(f"Unsupported workflow status: {workflow_status}")
+        if item_type not in {"action", "follow_up"}:
+            raise ValueError("Only action and follow_up items support workflow updates.")
+        reviewed_at = _utc_iso()
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            row = update_workspace_item_status(
+                connection,
+                item_type=item_type,
+                item_id=item_id,
+                workflow_status=workflow_status,
+                reviewed_at=reviewed_at,
+            )
+            connection.commit()
+        if row is None:
+            raise ValueError(f"No {item_type} found with id {item_id}.")
+        return _hydrate_workspace_item(dict(row) | {"item_type": item_type, "source_display_name": row["capture_id"]})
+
+    def finalise_session(self, capture_id: str) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            row = self._require_session(connection, capture_id)
+            self._assert_transition(str(row["status"]), "final")
+            now = _utc_iso()
+            update_meeting_fields(
+                connection,
+                capture_id,
+                status="final",
+                reviewed_at=row.get("reviewed_at") or now,
+                updated_at=now,
+            )
+            connection.commit()
+            next_row = fetch_meeting_by_capture_id(connection, capture_id)
+        assert next_row is not None
+        return self._hydrate_session(dict(next_row))
+
+    def memory_view(self, item_type: str, limit: int = 200) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            rows = [dict(row) for row in fetch_cross_session_action_items(connection, limit=limit)]
+        filtered = [
+            item for item in (_hydrate_workspace_item(row) for row in rows)
+            if (
+                item_type == "decisions" and item["item_type"] == "decision"
+            ) or (
+                item_type == "blockers_risks" and item["item_type"] == "blocker_risk"
+            ) or (
+                item_type == "open_questions" and item["item_type"] == "open_question"
+            )
+        ]
+        return {"item_type": item_type, "items": filtered}
 
     def create_session(self, display_name: str | None = None) -> dict[str, object]:
         bootstrap_database(self.config)
@@ -471,6 +567,22 @@ class SessionWorkflowService:
             "active_capture": active_capture,
         }
 
+    def _hydrate_library_session(self, row: dict[str, object]) -> dict[str, object]:
+        payload = self._hydrate_session(row)
+        payload["providers"] = _split_csv_fields(
+            row.get("summary_providers"),
+            row.get("action_providers"),
+            row.get("decision_providers"),
+            row.get("follow_up_providers"),
+        )
+        payload["models"] = _split_csv_fields(
+            row.get("summary_models"),
+            row.get("action_models"),
+            row.get("decision_models"),
+            row.get("follow_up_models"),
+        )
+        return payload
+
 
 def _clean_text(value: str | None) -> str | None:
     if value is None:
@@ -517,6 +629,41 @@ def _compact_workflow_state(value: object) -> str:
     state = str(value or "open").strip().casefold()
     if state in {"done", "closed", "complete", "completed"}:
         return "done"
+    if state in {"dismissed", "ignore"}:
+        return "dismissed"
+    if state in {"carried", "carry", "carried_forward"}:
+        return "carried_forward"
     if state in {"blocked", "risk"}:
-        return "blocked"
+        return "open"
     return "open"
+
+
+def _split_csv_fields(*values: object) -> list[str]:
+    items: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        for part in str(value).split(","):
+            text = part.strip()
+            if text:
+                items.add(text)
+    return sorted(items)
+
+
+def _build_snippet(content: str, query: str, size: int = 110) -> str:
+    cleaned = " ".join(content.split())
+    if not cleaned:
+        return ""
+    lowered = cleaned.casefold()
+    marker = query.strip().casefold()
+    index = lowered.find(marker) if marker else 0
+    if index < 0:
+        return cleaned[:size]
+    start = max(0, index - (size // 2))
+    end = min(len(cleaned), start + size)
+    snippet = cleaned[start:end]
+    if start > 0:
+        snippet = f"…{snippet}"
+    if end < len(cleaned):
+        snippet = f"{snippet}…"
+    return snippet

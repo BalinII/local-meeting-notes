@@ -61,6 +61,13 @@ Phase 8 adds a lightweight human review workflow:
 - reviewed state is stored locally in SQLite beside the generated output
 - exports prefer reviewed text and omit rejected extracted items from Markdown and HTML
 
+Phase 9 adds cross-session memory workspace features:
+- dedicated session library view and API payloads for all locally persisted sessions
+- cross-session search across display names, summaries, and extracted outcomes
+- global action tracker with workflow states (`open`, `done`, `dismissed`, `carried_forward`)
+- lightweight finalisation state (`final`) for reviewed sessions
+- memory views for decisions, blockers/risks, and open questions
+
 Current stabilization notes:
 - The desktop UI is currently a review/export workspace for persisted captures, not a full recording-control dashboard.
 - Session recording commands exist in the backend CLI and Tauri command layer, but capture reliability remains a validation focus.
@@ -211,6 +218,12 @@ python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --
 python -m local_meeting_notes.app review recent --limit 12
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app review update-item --item-type action --item-id 1 --review-status edited --description "Reviewed action text"
+python -m local_meeting_notes.app session library
+python -m local_meeting_notes.app session search --query "roadmap"
+python -m local_meeting_notes.app actions workspace --limit 200
+python -m local_meeting_notes.app actions update-workflow --item-type action --item-id 1 --workflow-status carried_forward
+python -m local_meeting_notes.app session finalise --capture-id "<capture-id>"
+python -m local_meeting_notes.app memory list --item-type decisions
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json

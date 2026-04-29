@@ -255,4 +255,48 @@ def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir
     assert {item["item_type"] for item in items} == {"action", "blocker_risk"}
     assert {item["capture_id"] for item in items} == {created["capture_id"]}
     assert {item["source_display_name"] for item in items} == {"Workspace Source"}
-    assert {item["workflow_state"] for item in items} == {"open", "blocked"}
+    assert {item["workflow_state"] for item in items} == {"open"}
+
+
+def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Roadmap Planning")
+    with connection_context(config.database_path) as connection:
+        insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                description="Carry roadmap tasks to next sprint planning.",
+                owner_name="Unconfirmed speaker",
+                status="open",
+                evidence_snippet="Action: carry roadmap tasks.",
+            ),
+        )
+        connection.commit()
+
+    library = service.session_library()
+    assert any(session["capture_id"] == created["capture_id"] for session in library["sessions"])
+
+    search = service.search_workspace("roadmap")
+    assert search["total_matches"] >= 1
+    assert any(group["capture_id"] == created["capture_id"] for group in search["sessions"])
+
+    item = service.dashboard_payload()["action_items"][0]
+    updated = service.update_action_workflow_state(
+        item_type="action",
+        item_id=int(item["id"]),
+        workflow_status="carried_forward",
+    )
+    assert updated["workflow_state"] == "carried_forward"
