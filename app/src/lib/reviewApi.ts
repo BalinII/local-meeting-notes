@@ -155,7 +155,7 @@ export async function listSessionLibrary(): Promise<SessionLibraryEntry[]> {
 export async function searchAcrossSessions(query: string): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return { query, total_matches: 0, sessions: [] };
-  return invoke("session_search", { query, limit: 120 });
+  return invoke("session_search", { query: query.trim(), limit: 120 });
 }
 
 export async function finaliseCapture(captureId: string): Promise<void> {
@@ -178,7 +178,14 @@ export async function updateActionWorkflow(input: {
 }): Promise<void> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return;
-  await invoke("update_action_workflow", input);
+  await invoke("update_action_workflow", {
+    itemType: input.itemType,
+    item_type: input.itemType,
+    itemId: input.itemId,
+    item_id: input.itemId,
+    workflowStatus: input.workflowStatus,
+    workflow_status: input.workflowStatus,
+  });
 }
 
 export async function listMemoryItems(itemType: "decisions" | "blockers_risks" | "open_questions"): Promise<ActionTrackerItem[]> {

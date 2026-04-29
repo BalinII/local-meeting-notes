@@ -35,6 +35,9 @@ export function AppShell() {
   const [actionItems, setActionItems] = useState<ActionTrackerItem[]>([]);
   const [memoryType, setMemoryType] = useState<"decisions" | "blockers_risks" | "open_questions">("decisions");
   const [memoryItems, setMemoryItems] = useState<ActionTrackerItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState("Run a search across sessions.");
+  const [isUpdatingWorkflowId, setIsUpdatingWorkflowId] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshAll();
@@ -81,8 +84,20 @@ export function AppShell() {
   }
 
   async function runSearch() {
-    const next = await searchAcrossSessions(searchQuery);
-    setSearchResults(next);
+    if (!searchQuery.trim()) {
+      setSearchResults({ total_matches: 0, sessions: [] });
+      setSearchMessage("Enter text to search.");
+      return;
+    }
+    setIsSearching(true);
+    setSearchMessage("Searching...");
+    try {
+      const next = await searchAcrossSessions(searchQuery);
+      setSearchResults(next);
+      setSearchMessage(next.total_matches ? `Found ${next.total_matches} matches.` : "No matches found.");
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   async function handleExport(format: "markdown" | "html" | "json") {
@@ -115,9 +130,30 @@ export function AppShell() {
 
   async function handleWorkflow(item: ActionTrackerItem, workflowStatus: ActionTrackerItem["workflow_state"]) {
     if (item.item_type !== "action" && item.item_type !== "follow_up") return;
-    await updateActionWorkflow({ itemType: item.item_type, itemId: item.id, workflowStatus });
-    await refreshActions();
-    await refreshMemory();
+    const key = `${item.item_type}-${item.id}`;
+    setIsUpdatingWorkflowId(key);
+    setStatus(`Updating workflow state to ${workflowStatus}...`);
+    try {
+      await updateActionWorkflow({ itemType: item.item_type, itemId: item.id, workflowStatus });
+      setStatus(`Saved workflow state: ${workflowStatus}.`);
+      await refreshActions();
+      await refreshMemory();
+    } finally {
+      setIsUpdatingWorkflowId(null);
+    }
+  }
+
+  async function handleNewRecording() {
+    const invoke = window.__TAURI__?.core?.invoke;
+    if (!invoke) {
+      setStatus("New Recording is available in Tauri desktop mode.");
+      return;
+    }
+    const created = await invoke<{ capture_id: string }>("create_session");
+    await refreshLibrary();
+    await refreshRecentCaptures();
+    setStatus(`Created new recording session: ${created.capture_id}`);
+    await loadCapture(created.capture_id);
   }
 
   const filteredLibrary = useMemo(() => library, [library]);
@@ -129,6 +165,7 @@ export function AppShell() {
         <h1>Session Library + Search</h1>
         <p className="hero-copy">Browse every session, search outcomes across meeting history, and track carry-forward actions locally.</p>
         <div className="segmented-control">
+          <button className="active" onClick={() => void handleNewRecording()}>New Recording</button>
           {(["review", "library", "search", "actions", "memory"] as WorkspaceTab[]).map((tab) => (
             <button key={tab} className={tab === activeTab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>
           ))}
@@ -193,10 +230,10 @@ export function AppShell() {
       {activeTab === "search" && (
         <section className="panel workspace-panel">
           <div className="capture-toolbar compact-grid">
-            <input className="workspace-search" placeholder="Search summaries, actions, decisions, follow-ups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <button onClick={() => void runSearch()}>Search</button>
+            <input className="workspace-search" placeholder="Search summaries, actions, decisions, follow-ups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void runSearch(); }} />
+            <button onClick={() => void runSearch()} disabled={isSearching}>{isSearching ? "Searching..." : "Search"}</button>
           </div>
-          <p className="muted">Matches: {searchResults.total_matches}</p>
+          <p className="muted">{searchMessage} Matches: {searchResults.total_matches}</p>
           <div className="workspace-group-list">
             {searchResults.sessions.map((session) => (
               <div className="workspace-group" key={session.capture_id}>
@@ -226,10 +263,10 @@ export function AppShell() {
                 <div className="badge-row"><span className={`status-pill action-${item.workflow_state}`}>{item.workflow_state}</span><span className={`status-pill review-${item.review_status}`}>{item.review_status}</span></div>
                 {(item.item_type === "action" || item.item_type === "follow_up") && (
                   <div className="review-actions">
-                    <button className="secondary-button" onClick={() => void handleWorkflow(item, "open")}>Open</button>
-                    <button className="secondary-button" onClick={() => void handleWorkflow(item, "done")}>Done</button>
-                    <button className="secondary-button" onClick={() => void handleWorkflow(item, "carried_forward")}>Carry Forward</button>
-                    <button className="danger-button" onClick={() => void handleWorkflow(item, "dismissed")}>Dismiss</button>
+                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "open")}>Open</button>
+                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "done")}>Done</button>
+                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "carried_forward")}>Carry Forward</button>
+                    <button className="danger-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "dismissed")}>Dismiss</button>
                   </div>
                 )}
               </article>
