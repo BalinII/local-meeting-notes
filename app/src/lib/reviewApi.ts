@@ -93,6 +93,7 @@ export type SearchMatch = {
   item_type: string;
   field_name: string;
   snippet: string;
+  content_state?: "generated" | "reviewed" | "final";
 };
 
 export type SearchSessionGroup = {
@@ -112,7 +113,10 @@ export type ActionTrackerItem = {
   review_status: string;
   workflow_state: "open" | "done" | "dismissed" | "carried_forward";
   reviewed_at?: string | null;
+  content_state?: "generated" | "reviewed" | "final";
 };
+
+export type ContentStateFilter = "final_only" | "reviewed_final" | "all";
 
 type TauriGlobal = {
   core?: {
@@ -205,10 +209,10 @@ export async function stopRecordingSession(captureId: string): Promise<SessionOv
   return invoke<SessionOverview>("stop_session", { captureId });
 }
 
-export async function searchAcrossSessions(query: string): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
+export async function searchAcrossSessions(query: string, contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return { query, total_matches: 0, sessions: [] };
-  return invoke("session_search", { query: query.trim(), limit: 120 });
+  return invoke("session_search", { query: query.trim(), limit: 120, contentStateFilter });
 }
 
 export async function finaliseCapture(captureId: string): Promise<void> {
@@ -217,10 +221,10 @@ export async function finaliseCapture(captureId: string): Promise<void> {
   await invoke("finalise_session", { captureId });
 }
 
-export async function listGlobalActions(): Promise<ActionTrackerItem[]> {
+export async function listGlobalActions(contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<ActionTrackerItem[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200 });
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200, contentStateFilter });
   return payload.items || [];
 }
 
@@ -241,10 +245,10 @@ export async function updateActionWorkflow(input: {
   });
 }
 
-export async function listMemoryItems(itemType: "decisions" | "blockers_risks" | "open_questions"): Promise<ActionTrackerItem[]> {
+export async function listMemoryItems(itemType: "decisions" | "blockers_risks" | "open_questions", contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<ActionTrackerItem[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_memory_items", { itemType, limit: 200 });
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_memory_items", { itemType, limit: 200, contentStateFilter });
   return payload.items || [];
 }
 

@@ -317,7 +317,12 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 actions.review_status AS review_status,
                 actions.reviewed_description AS reviewed_description,
                 actions.reviewed_owner_name AS reviewed_owner_name,
-                actions.reviewed_at AS reviewed_at
+                actions.reviewed_at AS reviewed_at,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN actions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state
             FROM actions
             INNER JOIN meetings ON meetings.id = actions.meeting_id
             WHERE actions.review_status <> 'rejected'
@@ -343,7 +348,12 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 decisions.review_status AS review_status,
                 decisions.reviewed_description AS reviewed_description,
                 decisions.reviewed_owner_name AS reviewed_owner_name,
-                decisions.reviewed_at AS reviewed_at
+                decisions.reviewed_at AS reviewed_at,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN decisions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state
             FROM decisions
             INNER JOIN meetings ON meetings.id = decisions.meeting_id
             WHERE decisions.review_status <> 'rejected'
@@ -369,12 +379,20 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 follow_ups.review_status AS review_status,
                 follow_ups.reviewed_description AS reviewed_description,
                 follow_ups.reviewed_owner_name AS reviewed_owner_name,
-                follow_ups.reviewed_at AS reviewed_at
+                follow_ups.reviewed_at AS reviewed_at,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN follow_ups.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state
             FROM follow_ups
             INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
             WHERE follow_ups.review_status <> 'rejected'
         )
-        ORDER BY COALESCE(reviewed_at, generated_at, source_updated_at) DESC, id DESC
+        ORDER BY
+            CASE content_state WHEN 'final' THEN 3 WHEN 'reviewed' THEN 2 ELSE 1 END DESC,
+            COALESCE(reviewed_at, generated_at, source_updated_at) DESC,
+            id DESC
         LIMIT ?
         """,
         (limit,),
@@ -426,6 +444,7 @@ def search_capture_content(
                 meetings.capture_id AS capture_id,
                 meetings.title AS session_display_name,
                 meetings.status AS lifecycle_state,
+                'generated' AS content_state,
                 'session' AS item_type,
                 'display_name' AS field_name,
                 meetings.title AS content,
@@ -439,6 +458,7 @@ def search_capture_content(
                 meetings.capture_id,
                 meetings.title,
                 meetings.status,
+                'generated' AS content_state,
                 'session' AS item_type,
                 'capture_id' AS field_name,
                 meetings.capture_id AS content,
@@ -452,6 +472,7 @@ def search_capture_content(
                 transcript_segments.capture_id,
                 meetings.title,
                 meetings.status,
+                'generated' AS content_state,
                 'transcript' AS item_type,
                 COALESCE(transcript_segments.speaker_label, 'transcript') AS field_name,
                 transcript_segments.content AS content,
@@ -466,6 +487,11 @@ def search_capture_content(
                 summaries.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN summaries.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'summary' AS item_type,
                 summaries.summary_type AS field_name,
                 summaries.content AS content,
@@ -479,6 +505,11 @@ def search_capture_content(
                 summaries.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN summaries.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'summary' AS item_type,
                 summaries.summary_type || '_evidence' AS field_name,
                 summaries.evidence_snippet AS content,
@@ -493,6 +524,11 @@ def search_capture_content(
                 actions.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN actions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'action' AS item_type,
                 'actions' AS field_name,
                 COALESCE(actions.reviewed_description, actions.description) AS content,
@@ -506,6 +542,11 @@ def search_capture_content(
                 actions.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN actions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'action' AS item_type,
                 'action_evidence' AS field_name,
                 actions.evidence_snippet AS content,
@@ -520,6 +561,11 @@ def search_capture_content(
                 decisions.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN decisions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'decision' AS item_type,
                 'decisions' AS field_name,
                 COALESCE(decisions.reviewed_description, decisions.description) AS content,
@@ -533,6 +579,11 @@ def search_capture_content(
                 decisions.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN decisions.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 'decision' AS item_type,
                 'decision_evidence' AS field_name,
                 decisions.evidence_snippet AS content,
@@ -547,6 +598,11 @@ def search_capture_content(
                 follow_ups.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN follow_ups.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.follow_up_type AS field_name,
                 COALESCE(follow_ups.reviewed_description, follow_ups.description) AS content,
@@ -560,6 +616,11 @@ def search_capture_content(
                 follow_ups.capture_id,
                 meetings.title,
                 meetings.status,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    WHEN follow_ups.review_status IN ('accepted', 'edited') THEN 'reviewed'
+                    ELSE 'generated'
+                END AS content_state,
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.follow_up_type || '_evidence' AS field_name,
                 follow_ups.evidence_snippet AS content,
@@ -572,6 +633,7 @@ def search_capture_content(
             capture_id,
             session_display_name,
             lifecycle_state,
+            content_state,
             item_type,
             field_name,
             content,
@@ -579,7 +641,10 @@ def search_capture_content(
             REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') AS lowered_content
         FROM searchable
         WHERE REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') LIKE ?
-        ORDER BY item_updated_at DESC, capture_id DESC
+        ORDER BY
+            CASE content_state WHEN 'final' THEN 3 WHEN 'reviewed' THEN 2 ELSE 1 END DESC,
+            item_updated_at DESC,
+            capture_id DESC
         LIMIT ?
         """,
         (like_query, safe_limit),

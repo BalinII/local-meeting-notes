@@ -29,9 +29,10 @@ fn session_library() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn session_search(query: String, limit: Option<i64>) -> Result<serde_json::Value, String> {
+fn session_search(query: String, limit: Option<i64>, content_state_filter: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(120).clamp(1, 500).to_string();
-    run_backend_json(&["session", "search", "--query", query.as_str(), "--limit", limit_arg.as_str()])
+    let filter = content_state_filter.unwrap_or_else(|| "reviewed_final".to_string());
+    run_backend_json(&["session", "search", "--query", query.as_str(), "--limit", limit_arg.as_str(), "--content-state-filter", filter.as_str()])
 }
 
 #[tauri::command]
@@ -157,9 +158,10 @@ fn finalise_session(capture_id: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn list_action_tracker_items(limit: Option<i64>) -> Result<serde_json::Value, String> {
+fn list_action_tracker_items(limit: Option<i64>, content_state_filter: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(200).clamp(1, 500).to_string();
-    run_backend_json(&["actions", "workspace", "--limit", limit_arg.as_str()])
+    let filter = content_state_filter.unwrap_or_else(|| "reviewed_final".to_string());
+    run_backend_json(&["actions", "workspace", "--limit", limit_arg.as_str(), "--content-state-filter", filter.as_str()])
 }
 
 #[tauri::command]
@@ -178,9 +180,10 @@ fn update_action_workflow(item_type: String, item_id: i64, workflow_status: Stri
 }
 
 #[tauri::command]
-fn list_memory_items(item_type: String, limit: Option<i64>) -> Result<serde_json::Value, String> {
+fn list_memory_items(item_type: String, limit: Option<i64>, content_state_filter: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(200).clamp(1, 500).to_string();
-    run_backend_json(&["memory", "list", "--item-type", item_type.as_str(), "--limit", limit_arg.as_str()])
+    let filter = content_state_filter.unwrap_or_else(|| "reviewed_final".to_string());
+    run_backend_json(&["memory", "list", "--item-type", item_type.as_str(), "--limit", limit_arg.as_str(), "--content-state-filter", filter.as_str()])
 }
 
 #[tauri::command]

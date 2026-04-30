@@ -40,6 +40,7 @@ def _utc_iso() -> str:
 
 
 class SessionWorkflowService:
+    content_state_priority = {"final": 3, "reviewed": 2, "generated": 1}
     allowed_transitions = {
         "draft": {"recording", "archived"},
         "recording": {"paused", "processing"},
@@ -97,12 +98,27 @@ class SessionWorkflowService:
             rows = [dict(row) for row in fetch_session_library_rows(connection)]
         return {"sessions": [self._hydrate_library_session(row) for row in rows]}
 
-    def search_workspace(self, query: str, limit: int = 120) -> dict[str, object]:
+    def search_workspace(
+        self,
+        query: str,
+        limit: int = 120,
+        content_state_filter: str = "reviewed_final",
+    ) -> dict[str, object]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
             rows = [dict(row) for row in search_capture_content(connection, query=query, limit=limit)]
+        filtered_rows = [
+            row for row in rows if _include_content_state(str(row.get("content_state") or "generated"), content_state_filter)
+        ]
+        filtered_rows.sort(
+            key=lambda row: (
+                -self.content_state_priority.get(str(row.get("content_state") or "generated"), 0),
+                str(row.get("item_updated_at") or ""),
+            ),
+            reverse=False,
+        )
         grouped: dict[str, dict[str, object]] = {}
-        for row in rows:
+        for row in filtered_rows:
             capture_id = str(row["capture_id"])
             group = grouped.setdefault(
                 capture_id,
@@ -118,10 +134,11 @@ class SessionWorkflowService:
                     "item_type": row.get("item_type"),
                     "field_name": row.get("field_name"),
                     "snippet": _build_snippet(str(row.get("content") or ""), query),
+                    "content_state": row.get("content_state") or "generated",
                 }
             )
         sessions = list(grouped.values())
-        return {"query": query, "total_matches": len(rows), "sessions": sessions}
+        return {"query": query, "total_matches": len(filtered_rows), "sessions": sessions}
 
     def update_action_workflow_state(
         self,
@@ -167,12 +184,16 @@ class SessionWorkflowService:
         assert next_row is not None
         return self._hydrate_session(dict(next_row))
 
-    def memory_view(self, item_type: str, limit: int = 200) -> dict[str, object]:
+    def memory_view(self, item_type: str, limit: int = 200, content_state_filter: str = "reviewed_final") -> dict[str, object]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
             rows = [dict(row) for row in fetch_cross_session_action_items(connection, limit=limit)]
         filtered = [
             item for item in (_hydrate_workspace_item(row) for row in rows)
+            if _include_content_state(str(item["content_state"]), content_state_filter)
+        ]
+        filtered = [
+            item for item in filtered
             if (
                 item_type == "decisions" and item["item_type"] == "decision"
             ) or (
@@ -637,6 +658,7 @@ def _hydrate_workspace_item(row: dict[str, object]) -> dict[str, object]:
         "effective_owner_name": reviewed_owner_name or row.get("owner_name"),
         "workflow_state": _compact_workflow_state(row.get("workflow_state")),
         "review_status": row.get("review_status") or "generated",
+        "content_state": _content_state_from_row(row),
         "reviewed_at": row.get("reviewed_at"),
         "evidence_snippet": row.get("evidence_snippet"),
         "start_offset_seconds": row.get("start_offset_seconds"),
@@ -645,6 +667,22 @@ def _hydrate_workspace_item(row: dict[str, object]) -> dict[str, object]:
         "model_name": row.get("model_name"),
         "generated_at": row.get("generated_at"),
     }
+
+
+def _content_state_from_row(row: dict[str, object]) -> str:
+    if str(row.get("source_lifecycle_state") or "") == "final":
+        return "final"
+    if str(row.get("review_status") or "generated") in {"accepted", "edited"}:
+        return "reviewed"
+    return "generated"
+
+
+def _include_content_state(state: str, content_state_filter: str) -> bool:
+    if content_state_filter == "all":
+        return True
+    if content_state_filter == "final_only":
+        return state == "final"
+    return state in {"final", "reviewed"}
 
 
 def _compact_workflow_state(value: object) -> str:

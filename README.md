@@ -68,6 +68,13 @@ Phase 9 adds cross-session memory workspace features:
 - lightweight finalisation state (`final`) for reviewed sessions
 - memory views for decisions, blockers/risks, and open questions
 
+Phase 10 strengthens finalisation and preferred-content selection:
+- session finalisation remains lightweight and session-level (`reviewed` -> `final`)
+- global views now use one shared preference rule: `final` first, then `reviewed`, then `generated`
+- cross-session search ranks by content state (`final` > `reviewed` > `generated`) before recency
+- global Actions and Memory support lightweight visibility filters (`Final only`, `Reviewed + Final`, `All content`)
+- provenance is preserved through source session ids, names, and lifecycle state in global views and exports
+
 Current stabilization notes:
 - The desktop UI is currently a review/export workspace for persisted captures, not a full recording-control dashboard.
 - Session recording commands exist in the backend CLI and Tauri command layer, but capture reliability remains a validation focus.

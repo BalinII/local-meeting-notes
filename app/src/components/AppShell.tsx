@@ -16,6 +16,7 @@ import {
   stopRecordingSession,
   updateActionWorkflow,
   type ActionTrackerItem,
+  type ContentStateFilter,
   type ExtractedOutput,
   type RecentCapture,
   type ReviewPayload,
@@ -42,6 +43,9 @@ export function AppShell() {
   const [memoryType, setMemoryType] = useState<"decisions" | "blockers_risks" | "open_questions">("decisions");
   const [memoryItems, setMemoryItems] = useState<ActionTrackerItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchFilter, setSearchFilter] = useState<ContentStateFilter>("reviewed_final");
+  const [actionsFilter, setActionsFilter] = useState<ContentStateFilter>("reviewed_final");
+  const [memoryFilter, setMemoryFilter] = useState<ContentStateFilter>("reviewed_final");
   const [searchMessage, setSearchMessage] = useState("Run a search across sessions.");
   const [isUpdatingWorkflowId, setIsUpdatingWorkflowId] = useState<string | null>(null);
   const [recordingSession, setRecordingSession] = useState<SessionOverview | null>(null);
@@ -53,7 +57,10 @@ export function AppShell() {
 
   useEffect(() => {
     void refreshMemory();
-  }, [memoryType]);
+  }, [memoryType, memoryFilter]);
+  useEffect(() => {
+    void refreshActions();
+  }, [actionsFilter]);
 
   async function refreshAll() {
     await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions()]);
@@ -68,11 +75,11 @@ export function AppShell() {
   }
 
   async function refreshActions() {
-    setActionItems(await listGlobalActions());
+    setActionItems(await listGlobalActions(actionsFilter));
   }
 
   async function refreshMemory() {
-    setMemoryItems(await listMemoryItems(memoryType));
+    setMemoryItems(await listMemoryItems(memoryType, memoryFilter));
   }
 
   async function loadCapture(nextCaptureId: string) {
@@ -100,7 +107,7 @@ export function AppShell() {
     setIsSearching(true);
     setSearchMessage("Searching...");
     try {
-      const next = await searchAcrossSessions(searchQuery);
+      const next = await searchAcrossSessions(searchQuery, searchFilter);
       setSearchResults(next);
       setSearchMessage(next.total_matches ? `Found ${next.total_matches} matches.` : "No matches found.");
     } catch (error) {
@@ -325,6 +332,11 @@ export function AppShell() {
         <section className="panel workspace-panel">
           <div className="capture-toolbar compact-grid">
             <input className="workspace-search" placeholder="Search summaries, actions, decisions, follow-ups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void runSearch(); }} />
+            <select value={searchFilter} onChange={(e) => setSearchFilter(e.target.value as ContentStateFilter)}>
+              <option value="final_only">Final only</option>
+              <option value="reviewed_final">Reviewed + Final</option>
+              <option value="all">All content</option>
+            </select>
             <button onClick={() => void runSearch()} disabled={isSearching}>{isSearching ? "Searching..." : "Search"}</button>
           </div>
           <p className="muted">{searchMessage} Matches: {searchResults.total_matches}</p>
@@ -349,6 +361,11 @@ export function AppShell() {
       {activeTab === "actions" && (
         <section className="panel workspace-panel">
           <div className="panel-heading compact"><h2>Global Action Tracker</h2><button className="secondary-button" onClick={() => void refreshActions()}>Refresh</button></div>
+          <select value={actionsFilter} onChange={(e) => setActionsFilter(e.target.value as ContentStateFilter)}>
+            <option value="final_only">Final only</option>
+            <option value="reviewed_final">Reviewed + Final</option>
+            <option value="all">All content</option>
+          </select>
           <div className="workspace-item-list">
             {actionItems.map((item) => (
               <article className="workspace-item" key={`${item.item_type}-${item.id}`}>
@@ -377,6 +394,11 @@ export function AppShell() {
             <button className={memoryType === "blockers_risks" ? "active" : ""} onClick={() => setMemoryType("blockers_risks")}>blockers/risks</button>
             <button className={memoryType === "open_questions" ? "active" : ""} onClick={() => setMemoryType("open_questions")}>open questions</button>
           </div>
+          <select value={memoryFilter} onChange={(e) => setMemoryFilter(e.target.value as ContentStateFilter)}>
+            <option value="final_only">Final only</option>
+            <option value="reviewed_final">Reviewed + Final</option>
+            <option value="all">All content</option>
+          </select>
           <div className="workspace-item-list">
             {memoryItems.map((item) => (
               <article className="workspace-item" key={`${item.item_type}-${item.id}`}>
