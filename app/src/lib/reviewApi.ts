@@ -209,7 +209,7 @@ export async function stopRecordingSession(captureId: string): Promise<SessionOv
   return invoke<SessionOverview>("stop_session", { captureId });
 }
 
-export async function searchAcrossSessions(query: string, contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
+export async function searchAcrossSessions(query: string, contentStateFilter: ContentStateFilter = "all"): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return { query, total_matches: 0, sessions: [] };
   return invoke("session_search", { query: query.trim(), limit: 120, contentStateFilter });

@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     session_search = session_subparsers.add_parser("search", help="Search across persisted sessions and outcomes.")
     session_search.add_argument("--query", required=True)
     session_search.add_argument("--limit", type=int, default=120)
-    session_search.add_argument("--content-state-filter", choices=("final_only", "reviewed_final", "all"), default="reviewed_final")
+    session_search.add_argument("--content-state-filter", choices=("final_only", "reviewed_final", "all"), default="all")
     session_subparsers.add_parser("retention-show", help="Show persisted retention settings.")
     session_retention_update = session_subparsers.add_parser("retention-update", help="Update retention settings.")
     session_retention_update.add_argument("--raw-audio-retention-days", type=int, required=True)

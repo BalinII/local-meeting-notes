@@ -102,7 +102,7 @@ class SessionWorkflowService:
         self,
         query: str,
         limit: int = 120,
-        content_state_filter: str = "reviewed_final",
+        content_state_filter: str = "all",
     ) -> dict[str, object]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:

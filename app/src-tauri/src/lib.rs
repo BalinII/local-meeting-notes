@@ -31,7 +31,7 @@ fn session_library() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn session_search(query: String, limit: Option<i64>, content_state_filter: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(120).clamp(1, 500).to_string();
-    let filter = content_state_filter.unwrap_or_else(|| "reviewed_final".to_string());
+    let filter = content_state_filter.unwrap_or_else(|| "all".to_string());
     run_backend_json(&["session", "search", "--query", query.as_str(), "--limit", limit_arg.as_str(), "--content-state-filter", filter.as_str()])
 }
 
