@@ -154,6 +154,58 @@ textarea {
   color: #667388;
 }
 
+.recording-confidence {
+  align-items: center;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  max-width: 900px;
+  padding: 12px 14px;
+}
+
+.recording-confidence strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.recording-confidence p,
+.recording-state-note {
+  color: #5b6678;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.confidence-active {
+  border-color: rgba(52, 162, 107, 0.25);
+}
+
+.confidence-waiting {
+  border-color: rgba(63, 131, 204, 0.22);
+}
+
+.confidence-ready {
+  border-color: rgba(52, 162, 107, 0.2);
+}
+
+.confidence-error {
+  border-color: rgba(199, 85, 73, 0.28);
+}
+
+.recording-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #99a8bc;
+}
+
+.recording-dot.active {
+  background: #34a26b;
+  box-shadow: 0 0 0 6px rgba(52, 162, 107, 0.14);
+}
+
 .review-layout {
   align-items: start;
   display: grid;
@@ -506,6 +558,14 @@ textarea {
 }
 
 .status-pill.session-processing {
+  background: #e0efff;
+  color: #245984;
+}
+
+.status-pill.session-starting,
+.status-pill.session-pausing,
+.status-pill.session-resuming,
+.status-pill.session-stopping {
   background: #e0efff;
   color: #245984;
 }

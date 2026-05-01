@@ -140,6 +140,8 @@ Search is also local and SQLite-backed. Results are grouped by session, prefer r
 
 The Global Action Tracker is for follow-through across sessions. It shows actionable `action` and `follow_up` items, keeps source session and owner visible, supports workflow states `open`, `done`, `carried_forward`, and `dismissed`, and can filter active/all/open/done/carried-forward/dismissed items. Sorting is available by most recent, oldest, owner, or source session. Workflow changes are persisted locally in SQLite and survive app restart.
 
+Recording confidence cues in the desktop app show when capture is starting, active, pausing, resuming, stopping, processing locally, ready for review, or needs attention. Pause and stop are cooperative because the app may wait for the current audio chunk to close before changing state or processing saved audio.
+
 ## Optional Local LLM Setup
 
 Start Ollama and pull a model:
@@ -198,6 +200,8 @@ cargo check
 - Audio capture reliability varies by Windows device and driver.
 - Microphone-only is the recommended current mode for demos.
 - System audio capture remains constrained and should be described honestly.
+- Pause/stop can wait briefly for the current chunk to finish writing.
+- Processing is local and can take time for transcription, diarization, summaries, and extraction.
 - Diarization is generic and imperfect.
 - Speaker ownership may remain `Unknown` or `Unconfirmed speaker`.
 - Search is SQLite-backed and useful for obvious persisted terms, with lightweight scopes and duplicate cleanup, but not a full-text search product.

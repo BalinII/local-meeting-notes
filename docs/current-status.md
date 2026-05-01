@@ -31,6 +31,8 @@ It is not production-ready.
 - Microphone-only recording is the safest validated path.
 - System audio / loopback capture is device-dependent and constrained.
 - Parallel microphone plus loopback timelines are not yet safely mixed/aligned.
+- The desktop app now surfaces explicit capture states for starting, recording, pausing, paused, resuming, stopping, processing, ready, and failed sessions.
+- Pause and stop are cooperative; the UI may show a waiting state while the active audio chunk closes.
 - Stop and Process can take time because processing is local.
 - Transcription quality depends on audio quality and model/runtime setup.
 - Diarization uses generic speaker labels and can be wrong.
