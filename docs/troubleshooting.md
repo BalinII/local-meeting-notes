@@ -78,6 +78,7 @@ Symptoms:
 What is normal:
 
 - Pause/stop may wait for the current chunk to finish writing.
+- The desktop UI may show `Pausing`, `Stopping`, or `Processing locally` while the backend is closing chunks or running local processing.
 - Stop and Process can take time because transcription, diarization, summary, and extraction run locally.
 - Processing speed depends on machine, audio length, model size, and local LLM health.
 
@@ -91,6 +92,15 @@ python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
 ```
 
 If processing fails, inspect `last_error` in the session payload and retry with a shorter known-good capture.
+
+Visible recording states:
+
+- `Starting`: creating the session and opening microphone capture.
+- `Recording active`: microphone chunks are being written locally.
+- `Pausing` / `Stopping`: waiting for the active chunk to close cooperatively.
+- `Processing locally`: saved audio is being transcribed, diarized, summarized, and extracted on this machine.
+- `Ready for review`: processing finished and the review payload can be opened.
+- `Needs attention`: capture startup or processing failed; inspect `last_error`.
 
 ## Microphone-Only Vs System Audio
 

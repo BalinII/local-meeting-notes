@@ -29,6 +29,7 @@ import {
   type SessionOverview,
   type SummaryOutput,
 } from "../lib/reviewApi";
+import { recordingConfidenceForState } from "../lib/recordingConfidence";
 
 type WorkspaceTab = "review" | "library" | "search" | "actions" | "memory";
 type ActionGroupMode = "status" | "session" | "owner";
@@ -189,7 +190,7 @@ export function AppShell() {
 
   async function handleNewRecording() {
     setIsRecordingBusy(true);
-    setStatus("Creating and starting microphone recording...");
+    setStatus("Creating the session and opening microphone capture...");
     try {
       const created = await createRecordingSession(newRecordingTitle);
       setRecordingSession({ ...created, lifecycle_state: "starting" });
@@ -202,7 +203,9 @@ export function AppShell() {
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshLibrary();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      setRecordingSession((current) => current ? { ...current, lifecycle_state: "processing_failed", last_error: message } : current);
     } finally {
       setIsRecordingBusy(false);
     }
@@ -211,7 +214,8 @@ export function AppShell() {
   async function handlePauseRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
-    setStatus("Pausing recording...");
+    setRecordingSession({ ...recordingSession, lifecycle_state: "pausing" });
+    setStatus("Pausing after the current audio chunk closes...");
     try {
       const paused = await pauseRecordingSession(recordingSession.capture_id);
       setRecordingSession(paused);
@@ -227,6 +231,7 @@ export function AppShell() {
   async function handleResumeRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
+    setRecordingSession({ ...recordingSession, lifecycle_state: "resuming" });
     setStatus("Resuming microphone recording...");
     try {
       const resumed = await resumeRecordingSession(recordingSession.capture_id);
@@ -243,9 +248,20 @@ export function AppShell() {
   async function handleStopRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
-    setStatus("Stopping and processing recording...");
+    const captureToStop = recordingSession.capture_id;
+    setRecordingSession({ ...recordingSession, lifecycle_state: "stopping" });
+    setStatus("Stopping capture, closing the current chunk, then processing locally...");
+    const processingTimer = window.setTimeout(() => {
+      setRecordingSession((current) => (
+        current?.capture_id === captureToStop
+          ? { ...current, lifecycle_state: "processing" }
+          : current
+      ));
+      setStatus("Processing locally: transcribing, diarizing, summarizing, and extracting outcomes...");
+    }, 1200);
     try {
-      const stopped = await stopRecordingSession(recordingSession.capture_id);
+      const stopped = await stopRecordingSession(captureToStop);
+      window.clearTimeout(processingTimer);
       setRecordingSession(stopped);
       await refreshAll();
       if (stopped.lifecycle_state === "review_ready" || stopped.lifecycle_state === "reviewed" || stopped.lifecycle_state === "exported") {
@@ -254,7 +270,10 @@ export function AppShell() {
         setStatus(stopped.last_error || `${stopped.display_name || stopped.capture_id} is ${stopped.lifecycle_state}.`);
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      window.clearTimeout(processingTimer);
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(message);
+      setRecordingSession((current) => current ? { ...current, lifecycle_state: "processing_failed", last_error: message } : current);
     } finally {
       setIsRecordingBusy(false);
     }
@@ -276,6 +295,10 @@ export function AppShell() {
     const filterText = actionFilter === "carried-forward" ? "carried forward" : actionFilter;
     return count ? `${count} ${count === 1 ? "item" : "items"} shown · ${filterText} · sorted by ${actionSort}` : "No action items match this view.";
   }, [actionFilter, actionItems.length, actionSort, isActionsLoading]);
+  const recordingConfidence = recordingConfidenceForState(
+    recordingSession?.lifecycle_state,
+    recordingSession?.last_error,
+  );
 
   return (
     <main className="app-shell">
@@ -283,6 +306,14 @@ export function AppShell() {
         <p className="eyebrow">Local Meeting Memory Workspace</p>
         <h1>Session Library + Search</h1>
         <p className="hero-copy">Browse every session, search outcomes across meeting history, and track carry-forward actions locally.</p>
+        <div className={`recording-confidence confidence-${recordingConfidence.tone}`}>
+          <div className={`recording-dot ${recordingConfidence.active ? "active" : ""}`} aria-hidden="true" />
+          <div>
+            <strong>{recordingConfidence.headline}</strong>
+            <p>{recordingConfidence.detail}</p>
+          </div>
+          <span className="status-pill subtle">{recordingConfidence.label}</span>
+        </div>
         <div className="capture-toolbar recording-name-row">
           <input
             aria-label="Meeting or call name"
@@ -307,19 +338,27 @@ export function AppShell() {
               <p className="capture-row-meta">{recordingSession.capture_id}</p>
             </div>
             <div className="badge-row">
-              <span className={`status-pill session-${recordingSession.lifecycle_state}`}>{recordingSession.lifecycle_state}</span>
+              <span className={`status-pill session-${recordingSession.lifecycle_state}`}>{formatState(recordingSession.lifecycle_state)}</span>
               <span className="status-pill subtle">Microphone only</span>
+              <span className="status-pill subtle">Local chunks</span>
             </div>
+            <p className="recording-state-note">{recordingConfidence.detail}</p>
             {recordingSession.last_error ? <p className="error-text">{recordingSession.last_error}</p> : null}
             <div className="recording-controls">
-              {recordingSession.lifecycle_state === "recording" && (
-                <button className="secondary-button" onClick={() => void handlePauseRecording()} disabled={isRecordingBusy}>Pause</button>
+              {(recordingSession.lifecycle_state === "recording" || recordingSession.lifecycle_state === "pausing") && (
+                <button className="secondary-button" onClick={() => void handlePauseRecording()} disabled={isRecordingBusy}>
+                  {recordingSession.lifecycle_state === "pausing" ? "Pausing..." : "Pause"}
+                </button>
               )}
-              {recordingSession.lifecycle_state === "paused" && (
-                <button onClick={() => void handleResumeRecording()} disabled={isRecordingBusy}>Resume</button>
+              {(recordingSession.lifecycle_state === "paused" || recordingSession.lifecycle_state === "resuming") && (
+                <button onClick={() => void handleResumeRecording()} disabled={isRecordingBusy}>
+                  {recordingSession.lifecycle_state === "resuming" ? "Resuming..." : "Resume"}
+                </button>
               )}
-              {(recordingSession.lifecycle_state === "recording" || recordingSession.lifecycle_state === "paused") && (
-                <button onClick={() => void handleStopRecording()} disabled={isRecordingBusy}>Stop and Process</button>
+              {(["recording", "paused", "pausing", "resuming", "stopping", "processing"].includes(recordingSession.lifecycle_state)) && (
+                <button onClick={() => void handleStopRecording()} disabled={isRecordingBusy || recordingSession.lifecycle_state === "processing"}>
+                  {recordingSession.lifecycle_state === "stopping" || recordingSession.lifecycle_state === "processing" ? "Working..." : "Stop and Process"}
+                </button>
               )}
             </div>
           </div>
