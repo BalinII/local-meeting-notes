@@ -444,7 +444,10 @@ def search_capture_content(
                 meetings.capture_id AS capture_id,
                 meetings.title AS session_display_name,
                 meetings.status AS lifecycle_state,
-                'generated' AS content_state,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    ELSE 'generated'
+                END AS content_state,
                 'session' AS item_type,
                 'display_name' AS field_name,
                 meetings.title AS content,
@@ -458,7 +461,10 @@ def search_capture_content(
                 meetings.capture_id,
                 meetings.title,
                 meetings.status,
-                'generated' AS content_state,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    ELSE 'generated'
+                END AS content_state,
                 'session' AS item_type,
                 'capture_id' AS field_name,
                 meetings.capture_id AS content,
@@ -472,10 +478,13 @@ def search_capture_content(
                 transcript_segments.capture_id,
                 meetings.title,
                 meetings.status,
-                'generated' AS content_state,
+                CASE
+                    WHEN meetings.status = 'final' THEN 'final'
+                    ELSE 'generated'
+                END AS content_state,
                 'transcript' AS item_type,
-                COALESCE(transcript_segments.speaker_label, 'transcript') AS field_name,
-                transcript_segments.content AS content,
+                'transcript' AS field_name,
+                COALESCE(transcript_segments.speaker_label, 'Unknown') || ': ' || transcript_segments.content AS content,
                 meetings.updated_at AS item_updated_at
             FROM transcript_segments
             INNER JOIN meetings ON meetings.capture_id = transcript_segments.capture_id
@@ -531,7 +540,11 @@ def search_capture_content(
                 END AS content_state,
                 'action' AS item_type,
                 'actions' AS field_name,
-                COALESCE(actions.reviewed_description, actions.description) AS content,
+                CASE
+                    WHEN COALESCE(actions.reviewed_owner_name, actions.owner_name, '') <> ''
+                    THEN COALESCE(actions.reviewed_owner_name, actions.owner_name) || ': ' || COALESCE(actions.reviewed_description, actions.description)
+                    ELSE COALESCE(actions.reviewed_description, actions.description)
+                END AS content,
                 COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
             FROM actions
             INNER JOIN meetings ON meetings.capture_id = actions.capture_id
@@ -605,7 +618,11 @@ def search_capture_content(
                 END AS content_state,
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.follow_up_type AS field_name,
-                COALESCE(follow_ups.reviewed_description, follow_ups.description) AS content,
+                CASE
+                    WHEN COALESCE(follow_ups.reviewed_owner_name, follow_ups.owner_name, '') <> ''
+                    THEN COALESCE(follow_ups.reviewed_owner_name, follow_ups.owner_name) || ': ' || COALESCE(follow_ups.reviewed_description, follow_ups.description)
+                    ELSE COALESCE(follow_ups.reviewed_description, follow_ups.description)
+                END AS content,
                 COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
             FROM follow_ups
             INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
@@ -638,9 +655,29 @@ def search_capture_content(
             field_name,
             content,
             item_updated_at,
-            REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') AS lowered_content
+            REPLACE(
+                LOWER(
+                    COALESCE(content, '')
+                    || ' ' || COALESCE(field_name, '')
+                    || ' ' || COALESCE(item_type, '')
+                    || ' ' || COALESCE(session_display_name, '')
+                    || ' ' || COALESCE(capture_id, '')
+                ),
+                CHAR(10),
+                ' '
+            ) AS lowered_content
         FROM searchable
-        WHERE REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') LIKE ?
+        WHERE REPLACE(
+            LOWER(
+                COALESCE(content, '')
+                || ' ' || COALESCE(field_name, '')
+                || ' ' || COALESCE(item_type, '')
+                || ' ' || COALESCE(session_display_name, '')
+                || ' ' || COALESCE(capture_id, '')
+            ),
+            CHAR(10),
+            ' '
+        ) LIKE ?
         ORDER BY
             CASE content_state WHEN 'final' THEN 3 WHEN 'reviewed' THEN 2 ELSE 1 END DESC,
             item_updated_at DESC,

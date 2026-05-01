@@ -324,7 +324,7 @@ def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
                 source_chunk_path="chunk.wav",
                 transcription_status="completed",
                 speaker_label="Ben",
-                content="Ben said the meeting should stay local-first and review the decision.",
+                content="The meeting should stay local-first and review the decision.",
                 start_offset_seconds=0,
                 end_offset_seconds=8,
             ),
@@ -375,6 +375,39 @@ def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
         result = service.search_workspace(query)
         assert result["total_matches"] >= 1
         assert any(group["capture_id"] == created["capture_id"] for group in result["sessions"])
+    speaker_result = service.search_workspace("Ben")
+    assert any(
+        "Ben:" in match["snippet"]
+        for group in speaker_result["sessions"]
+        for match in group["matches"]
+    )
+
+    reviewed_only = service.search_workspace("roadmap", content_state_filter="reviewed_final")
+    assert reviewed_only["total_matches"] == 0
+
+    with connection_context(config.database_path) as connection:
+        update_meeting_fields(
+            connection,
+            str(created["capture_id"]),
+            status="final",
+            updated_at="2026-04-25T00:00:00+00:00",
+        )
+        connection.commit()
+
+    final_only = service.search_workspace("roadmap", content_state_filter="final_only")
+    assert final_only["total_matches"] >= 1
+    assert {
+        match["content_state"]
+        for group in final_only["sessions"]
+        for match in group["matches"]
+    } == {"final"}
+    final_speaker = service.search_workspace("Ben", content_state_filter="final_only")
+    assert final_speaker["total_matches"] >= 1
+    assert {
+        match["content_state"]
+        for group in final_speaker["sessions"]
+        for match in group["matches"]
+    } == {"final"}
 
     item = service.dashboard_payload()["action_items"][0]
     updated = service.update_action_workflow_state(

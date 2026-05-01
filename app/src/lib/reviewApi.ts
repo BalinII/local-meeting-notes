@@ -171,10 +171,11 @@ export async function listSessionLibrary(): Promise<SessionLibraryEntry[]> {
   return payload.sessions || [];
 }
 
-export async function createRecordingSession(): Promise<SessionOverview> {
+export async function createRecordingSession(title?: string | null): Promise<SessionOverview> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("New Recording is available in Tauri desktop mode.");
-  return invoke<SessionOverview>("create_session", { title: null });
+  const cleanedTitle = title?.trim() || null;
+  return invoke<SessionOverview>("create_session", { title: cleanedTitle });
 }
 
 export async function startRecordingSession(captureId: string): Promise<SessionOverview> {
@@ -212,7 +213,7 @@ export async function stopRecordingSession(captureId: string): Promise<SessionOv
 export async function searchAcrossSessions(query: string, contentStateFilter: ContentStateFilter = "all"): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return { query, total_matches: 0, sessions: [] };
-  return invoke("session_search", { query: query.trim(), limit: 120, contentStateFilter });
+  return invoke("session_search", { query: query.trim(), limit: 120, contentStateFilter, content_state_filter: contentStateFilter });
 }
 
 export async function finaliseCapture(captureId: string): Promise<void> {
@@ -224,7 +225,7 @@ export async function finaliseCapture(captureId: string): Promise<void> {
 export async function listGlobalActions(contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<ActionTrackerItem[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200, contentStateFilter });
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200, contentStateFilter, content_state_filter: contentStateFilter });
   return payload.items || [];
 }
 
@@ -248,7 +249,7 @@ export async function updateActionWorkflow(input: {
 export async function listMemoryItems(itemType: "decisions" | "blockers_risks" | "open_questions", contentStateFilter: ContentStateFilter = "reviewed_final"): Promise<ActionTrackerItem[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_memory_items", { itemType, limit: 200, contentStateFilter });
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_memory_items", { itemType, limit: 200, contentStateFilter, content_state_filter: contentStateFilter });
   return payload.items || [];
 }
 

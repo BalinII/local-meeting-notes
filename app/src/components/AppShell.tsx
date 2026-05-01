@@ -20,6 +20,7 @@ import {
   type ExtractedOutput,
   type RecentCapture,
   type ReviewPayload,
+  type SearchSessionGroup,
   type SessionLibraryEntry,
   type SessionOverview,
   type SummaryOutput,
@@ -38,18 +39,20 @@ export function AppShell() {
 
   const [library, setLibrary] = useState<SessionLibraryEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<{ total_matches: number; sessions: { capture_id: string; display_name: string; lifecycle_state?: string | null; matches: { item_type: string; field_name: string; snippet: string }[] }[] }>({ total_matches: 0, sessions: [] });
+  const [searchResults, setSearchResults] = useState<{ total_matches: number; sessions: SearchSessionGroup[] }>({ total_matches: 0, sessions: [] });
   const [actionItems, setActionItems] = useState<ActionTrackerItem[]>([]);
   const [memoryType, setMemoryType] = useState<"decisions" | "blockers_risks" | "open_questions">("decisions");
   const [memoryItems, setMemoryItems] = useState<ActionTrackerItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchFilter, setSearchFilter] = useState<ContentStateFilter>("reviewed_final");
+  const [searchFilter, setSearchFilter] = useState<ContentStateFilter>("all");
   const [actionsFilter, setActionsFilter] = useState<ContentStateFilter>("reviewed_final");
   const [memoryFilter, setMemoryFilter] = useState<ContentStateFilter>("reviewed_final");
   const [searchMessage, setSearchMessage] = useState("Run a search across sessions.");
   const [isUpdatingWorkflowId, setIsUpdatingWorkflowId] = useState<string | null>(null);
   const [recordingSession, setRecordingSession] = useState<SessionOverview | null>(null);
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
+  const [recordingTitle, setRecordingTitle] = useState("");
+  const [recordingPhaseMessage, setRecordingPhaseMessage] = useState("");
 
   useEffect(() => {
     void refreshAll();
@@ -61,6 +64,9 @@ export function AppShell() {
   useEffect(() => {
     void refreshActions();
   }, [actionsFilter]);
+  useEffect(() => {
+    if (searchQuery.trim()) void runSearch();
+  }, [searchFilter]);
 
   async function refreshAll() {
     await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions()]);
@@ -163,8 +169,9 @@ export function AppShell() {
   async function handleNewRecording() {
     setIsRecordingBusy(true);
     setStatus("Creating and starting microphone recording...");
+    setRecordingPhaseMessage("Preparing a local microphone capture.");
     try {
-      const created = await createRecordingSession();
+      const created = await createRecordingSession(recordingTitle);
       setRecordingSession({ ...created, lifecycle_state: "starting" });
       const started = await startRecordingSession(created.capture_id);
       setRecordingSession(started);
@@ -172,9 +179,11 @@ export function AppShell() {
       setCaptureId(started.capture_id);
       setPayload(null);
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
+      setRecordingPhaseMessage("Recording is active. Use Pause or Stop and Process when ready.");
       await refreshLibrary();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+      setRecordingPhaseMessage("Recording did not start.");
     } finally {
       setIsRecordingBusy(false);
     }
@@ -184,13 +193,16 @@ export function AppShell() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
     setStatus("Pausing recording...");
+    setRecordingPhaseMessage("Waiting for the current audio chunk to close cleanly.");
     try {
       const paused = await pauseRecordingSession(recordingSession.capture_id);
       setRecordingSession(paused);
       setStatus(`Paused ${paused.display_name || paused.capture_id}.`);
+      setRecordingPhaseMessage("Recording is paused. Resume or stop and process when ready.");
       await refreshLibrary();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+      setRecordingPhaseMessage("Pause did not complete.");
     } finally {
       setIsRecordingBusy(false);
     }
@@ -200,13 +212,16 @@ export function AppShell() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
     setStatus("Resuming microphone recording...");
+    setRecordingPhaseMessage("Restarting local microphone capture for this same session.");
     try {
       const resumed = await resumeRecordingSession(recordingSession.capture_id);
       setRecordingSession(resumed);
       setStatus(`Recording ${resumed.display_name || resumed.capture_id}.`);
+      setRecordingPhaseMessage("Recording is active. Use Pause or Stop and Process when ready.");
       await refreshLibrary();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+      setRecordingPhaseMessage("Resume did not complete.");
     } finally {
       setIsRecordingBusy(false);
     }
@@ -215,18 +230,23 @@ export function AppShell() {
   async function handleStopRecording() {
     if (!recordingSession) return;
     setIsRecordingBusy(true);
-    setStatus("Stopping and processing recording...");
+    setRecordingSession({ ...recordingSession, lifecycle_state: "processing" });
+    setStatus(`Processing ${recordingSession.display_name || recordingSession.capture_id}...`);
+    setRecordingPhaseMessage("Stopping capture, transcribing audio, diarizing speakers, and extracting notes locally. This can take a little while.");
     try {
       const stopped = await stopRecordingSession(recordingSession.capture_id);
       setRecordingSession(stopped);
       await refreshAll();
       if (stopped.lifecycle_state === "review_ready" || stopped.lifecycle_state === "reviewed" || stopped.lifecycle_state === "exported") {
+        setRecordingPhaseMessage("Processing finished. Opening the review view.");
         await loadCapture(stopped.capture_id);
       } else {
         setStatus(stopped.last_error || `${stopped.display_name || stopped.capture_id} is ${stopped.lifecycle_state}.`);
+        setRecordingPhaseMessage(stopped.last_error ? "Processing ended with an error." : `Session is ${stopped.lifecycle_state}.`);
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+      setRecordingPhaseMessage("Stop and process did not complete.");
     } finally {
       setIsRecordingBusy(false);
     }
@@ -246,8 +266,16 @@ export function AppShell() {
             <button key={tab} className={tab === activeTab ? "active" : ""} onClick={() => setActiveTab(tab)}>{tab}</button>
           ))}
         </div>
+        <div className="capture-toolbar recording-name-row">
+          <input
+            placeholder="Meeting or call name"
+            value={recordingTitle}
+            onChange={(event) => setRecordingTitle(event.target.value)}
+            disabled={isRecordingBusy || recordingSession?.lifecycle_state === "recording"}
+          />
+        </div>
         {recordingSession && (
-          <div className="capture-picker recording-strip">
+          <div className="capture-picker recording-strip" aria-busy={recordingSession.lifecycle_state === "processing"}>
             <div>
               <p className="eyebrow">Current recording</p>
               <strong>{recordingSession.display_name || recordingSession.capture_id}</strong>
@@ -257,6 +285,7 @@ export function AppShell() {
               <span className={`status-pill session-${recordingSession.lifecycle_state}`}>{recordingSession.lifecycle_state}</span>
               <span className="status-pill subtle">Microphone only</span>
             </div>
+            {recordingPhaseMessage ? <p className="muted">{recordingPhaseMessage}</p> : null}
             {recordingSession.last_error ? <p className="error-text">{recordingSession.last_error}</p> : null}
             <div className="recording-controls">
               {recordingSession.lifecycle_state === "recording" && (
@@ -267,6 +296,9 @@ export function AppShell() {
               )}
               {(recordingSession.lifecycle_state === "recording" || recordingSession.lifecycle_state === "paused") && (
                 <button onClick={() => void handleStopRecording()} disabled={isRecordingBusy}>Stop and Process</button>
+              )}
+              {recordingSession.lifecycle_state === "processing" && (
+                <button disabled>Processing...</button>
               )}
             </div>
           </div>
@@ -347,8 +379,9 @@ export function AppShell() {
                 <div className="workspace-item-list">
                   {session.matches.map((match, index) => (
                     <article className="workspace-item" key={`${session.capture_id}-${index}`}>
-                      <strong>{match.field_name}</strong>
+                      <strong>{match.item_type} · {match.field_name}</strong>
                       <p>{match.snippet}</p>
+                      {"content_state" in match ? <span className={`status-pill session-${match.content_state}`}>{match.content_state}</span> : null}
                     </article>
                   ))}
                 </div>
