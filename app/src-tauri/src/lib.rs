@@ -24,14 +24,33 @@ fn list_recent_captures(limit: Option<i64>) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
-fn session_library() -> Result<serde_json::Value, String> {
-    run_backend_json(&["session", "library"])
+fn session_library(sort: Option<String>, filter: Option<String>) -> Result<serde_json::Value, String> {
+    let sort_value = sort.unwrap_or_else(|| "newest".to_string());
+    let filter_value = filter.unwrap_or_else(|| "all".to_string());
+    run_backend_json(&[
+        "session",
+        "library",
+        "--sort",
+        sort_value.as_str(),
+        "--filter",
+        filter_value.as_str(),
+    ])
 }
 
 #[tauri::command]
-fn session_search(query: String, limit: Option<i64>) -> Result<serde_json::Value, String> {
+fn session_search(query: String, limit: Option<i64>, scope: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(120).clamp(1, 500).to_string();
-    run_backend_json(&["session", "search", "--query", query.as_str(), "--limit", limit_arg.as_str()])
+    let scope_value = scope.unwrap_or_else(|| "all".to_string());
+    run_backend_json(&[
+        "session",
+        "search",
+        "--query",
+        query.as_str(),
+        "--limit",
+        limit_arg.as_str(),
+        "--scope",
+        scope_value.as_str(),
+    ])
 }
 
 #[tauri::command]

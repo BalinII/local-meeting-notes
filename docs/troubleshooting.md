@@ -1,21 +1,32 @@
 # Troubleshooting Guide
 
-This guide covers common setup and runtime issues for the Local Meeting Notes prototype.
+This guide covers common setup, recording, processing, search, and workflow issues for the Local Meeting Notes prototype.
 
-## 1) Python / virtual environment issues
+## Quick Health Check
 
-### Symptom
+Run from repo root:
+
+```powershell
+(Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& .\.venv\Scripts\Activate.ps1)
+python -m local_meeting_notes.app init
+python -m local_meeting_notes.app db bootstrap
+python -m local_meeting_notes.app audio devices
+python -m local_meeting_notes.app llm check
+cd .\app
+npm run build
+```
+
+If a demo is imminent, also keep a known-good `capture_id` ready.
+
+## Python And Virtual Environment Issues
+
+Symptoms:
 
 - `ModuleNotFoundError: No module named 'local_meeting_notes'`
-- CLI commands fail even though code exists.
+- CLI commands fail from repo root.
+- App shell cannot run backend commands.
 
-### Likely cause
-
-- venv not activated
-- backend package not installed in editable mode
-- wrong Python interpreter on PATH
-
-### Fix
+Fix:
 
 ```powershell
 python -m venv .venv
@@ -25,61 +36,89 @@ pip install -e .\backend
 python -m local_meeting_notes.app --help
 ```
 
-If `python` still points to a global interpreter, run `.\.venv\Scripts\python.exe -m local_meeting_notes.app --help`.
-
----
-
-## 2) Git / GitHub sync issues
-
-### Symptom
-
-- local branch behind remote
-- non-fast-forward push rejected
-- confusing merge state before demo work
-
-### Fix (safe default)
+If `python` resolves to the wrong interpreter, use:
 
 ```powershell
-git status
-git fetch origin
-git rebase origin/<your-branch>
+.\.venv\Scripts\python.exe -m local_meeting_notes.app --help
 ```
 
-If you have conflicts:
+## Recording Start Issues
+
+Symptoms:
+
+- New recording immediately fails.
+- No audio chunks are written.
+- App reports startup or active-capture mismatch.
+
+Checks:
 
 ```powershell
-git status
-# resolve files
-
-git add <resolved-files>
-git rebase --continue
+python -m local_meeting_notes.app audio devices
+python -m local_meeting_notes.app audio status
 ```
 
-If you need to abort rebase:
+Try:
+
+- use microphone-only mode for the demo
+- confirm Windows microphone privacy permissions
+- close other audio-heavy apps
+- avoid Bluetooth devices if capture is unstable
+- switch Windows default input device and retry
+- verify chunks under `backend/data/audio/<capture-id>/`
+
+## Pause, Resume, Stop Issues
+
+Symptoms:
+
+- Pause waits longer than expected.
+- Resume does not restart capture.
+- Stop and Process feels slow.
+- Session remains in `processing` or `processing_failed`.
+
+What is normal:
+
+- Pause/stop may wait for the current chunk to finish writing.
+- Stop and Process can take time because transcription, diarization, summary, and extraction run locally.
+- Processing speed depends on machine, audio length, model size, and local LLM health.
+
+Checks:
 
 ```powershell
-git rebase --abort
+python -m local_meeting_notes.app session get --capture-id "<capture-id>"
+python -m local_meeting_notes.app audio status
+python -m local_meeting_notes.app transcript status --capture-id "<capture-id>"
+python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
 ```
 
-Tip: keep doc-only changes isolated in a small branch to reduce conflicts with active implementation work.
+If processing fails, inspect `last_error` in the session payload and retry with a shorter known-good capture.
 
----
+## Microphone-Only Vs System Audio
 
-## 3) Ollama connectivity or timeout issues
+Current recommended mode:
 
-### Symptom
+- microphone-only for live demos and validation
 
-- `llm check` fails
-- summary/extraction local LLM runs hang or timeout
-- connection refused on `127.0.0.1:11434`
+System audio / loopback realities:
 
-### Likely cause
+- Windows loopback support depends on drivers and active output devices.
+- Bluetooth and virtual devices can be unreliable.
+- Parallel mic plus loopback creates separate source timelines.
+- The pipeline should not pretend parallel sources are a single aligned transcript until mixing/alignment is implemented.
 
-- Ollama server not running
-- model not pulled
-- timeout too short for machine/model
+Safe workaround:
 
-### Fix
+- capture/process one source timeline for the trusted demo flow
+- describe system audio as constrained and under validation
+
+## Local LLM Timeout Or Fallback
+
+Symptoms:
+
+- `llm check` fails.
+- Summary or extraction takes a long time.
+- Output appears heuristic even when `local_llm` is configured.
+
+Checks:
 
 ```powershell
 ollama serve
@@ -87,124 +126,63 @@ ollama pull llama3.1:8b
 python -m local_meeting_notes.app llm check
 ```
 
-Verify `.env` values:
+Relevant `.env` values:
 
 ```dotenv
+SUMMARY_PROVIDER=local_llm
+ACTION_EXTRACTION_PROVIDER=local_llm
 LOCAL_LLM_BASE_URL=http://127.0.0.1:11434
 LOCAL_LLM_MODEL=llama3.1:8b
 LOCAL_LLM_TIMEOUT_SECONDS=45
+LOCAL_LLM_MAX_TRANSCRIPT_CHARS=12000
 ```
 
-If your machine is slower, increase timeout.
+Expected fallback behavior:
 
----
+- If Ollama is unreachable, times out, returns invalid JSON, or produces weakly grounded output, the app falls back to heuristic provider behavior.
+- This is intentional and should not be treated as data loss.
+- Human review remains required either way.
 
-## 4) Local LLM fallback behavior (expected behavior)
+## Search Behavior And Limits
 
-### What happens
+Symptoms:
 
-If local LLM output is invalid/weak or runtime is unavailable, the app falls back to heuristic provider behavior.
+- `All` returns results, but a scoped search returns fewer or no results.
+- A term appears in raw transcript content but not in summaries or extracted-item scopes.
+- Search result count feels lower than expected.
 
-### What to do
+Current behavior:
 
-- This is usually not a crash condition.
-- Continue workflow and review heuristic outputs.
-- If you need deterministic behavior, run commands with `--provider heuristic`.
+- Search is local and SQLite-backed.
+- It is intended for obvious persisted terms, speaker labels, item labels, session names, and capture ids.
+- Results are grouped by session and capped per session so repeated evidence snippets do not dominate the view.
+- Reviewed or edited extracted content is preferred over generated wording where available.
+- Rejected extracted items are suppressed.
+- Available scopes are `all`, `sessions`, `summaries`, `actions`, `decisions`, `blockers-risks`, and `open-questions`.
+- Search is not a full-text ranking engine.
 
----
-
-## 5) Tauri / Node / Rust build issues
-
-### Symptom
-
-- `npm run tauri:dev` fails
-- Rust compilation errors for desktop shell
-- missing WebView/runtime errors
-
-### Fix checklist
+Manual checks:
 
 ```powershell
-cd .\app
-npm install
-npm run dev
-npm run tauri:dev
+python -m local_meeting_notes.app session search --query "Ben"
+python -m local_meeting_notes.app session search --query "decision"
+python -m local_meeting_notes.app session search --query "decision" --scope decisions
+python -m local_meeting_notes.app session search --query "local-first"
+python -m local_meeting_notes.app session library
+python -m local_meeting_notes.app session library --sort newest --filter needs-attention
 ```
 
-Also verify:
+If a scoped search appears empty, broaden the scope to `all` and confirm the content type. Transcript-only wording may not appear under summaries, actions, decisions, blockers/risks, or open questions.
 
-- Rust stable toolchain with MSVC target installed.
-- WebView2 runtime installed on Windows.
-- Node.js LTS (20+) in use.
+## Review And Export Issues
 
-If frontend build fails, run:
+Symptoms:
 
-```powershell
-npm run build
-```
+- Capture loads but review content is empty.
+- Export misses a reviewed item.
+- Re-extraction refuses to run.
 
-to surface type/build issues before Tauri launch.
-
----
-
-## 6) Missing icon/build asset issues
-
-### Symptom
-
-- Tauri build complains about missing icon resources.
-- packaging step fails due to asset path errors.
-
-### Fix
-
-- Confirm expected icon files exist in `app/src-tauri/icons/`.
-- Avoid moving/removing icon files without updating `tauri.conf.json`.
-- Re-run `npm run tauri:dev` after restoring assets.
-
-If assets were changed by another branch, re-sync and resolve before packaging.
-
----
-
-## 7) Audio capture issues
-
-### Symptom
-
-- no audio files written
-- only mic or only loopback captured
-- choppy/empty chunks
-
-### Likely cause
-
-- unsupported/unstable Windows audio device combo
-- sample-rate mismatch or virtual/Bluetooth device quirks
-- permissions/device selection issues
-
-### Fix checklist
-
-```powershell
-python -m local_meeting_notes.app audio devices
-python -m local_meeting_notes.app audio start
-python -m local_meeting_notes.app audio status
-python -m local_meeting_notes.app audio stop
-```
-
-Then:
-
-- switch default Windows input/output device and retry
-- test with wired headset/speakers instead of Bluetooth
-- reduce other apps using exclusive audio access
-- verify chunks are appearing under `backend/data/audio/<capture-id>/`
-
----
-
-## 8) Export / review UI issues
-
-### Symptom
-
-- capture loads but review content appears empty
-- edits not visible in exports
-- markdown/html export missing expected rows
-- extraction re-run refuses to proceed after review
-
-### Checks
+Checks:
 
 ```powershell
 python -m local_meeting_notes.app review recent --limit 12
@@ -212,59 +190,109 @@ python -m local_meeting_notes.app review show --capture-id "<capture-id>" --form
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
 ```
 
-Interpretation tips:
+Interpretation:
 
-- rejected items are intentionally omitted from markdown/html exports
-- reviewed text overrides generated text when present
-- empty output can mean extraction produced weak/filtered results
-- once accepted/edited/rejected review state exists, extraction re-runs are blocked to avoid erasing user review work
+- Rejected items are intentionally omitted from Markdown and HTML.
+- Reviewed text is preferred over generated text where present.
+- JSON is the best inspection format for generated/reviewed/effective fields.
+- Re-extraction after review is blocked to avoid erasing accepted/edited/rejected work.
 
----
+## Tauri, Node, And Rust Issues
 
-## 9) Parallel mic + system audio processing limit
+Symptoms:
 
-### Symptom
+- `npm run tauri:dev` fails.
+- `npm run build` fails.
+- Rust compilation errors.
+- Missing WebView2 runtime.
 
-- transcription fails with a message about multiple parallel audio sources
+Fix checklist:
 
-### Why this happens
+```powershell
+cd .\app
+npm install
+npm run build
+npm run tauri:dev
+```
 
-The prototype can capture microphone and loopback into separate source folders, but the processing pipeline does not yet mix or align those parallel timelines safely. Serializing both sources as one transcript would produce misleading timestamps and duplicated meeting content.
+Verify:
 
-### Current safe workaround
+- Node.js 20+
+- Rust stable with MSVC toolchain
+- WebView2 runtime installed
+- backend venv exists at repo root
+- backend package installed with `pip install -e .\backend`
 
-- record or process a single source timeline for transcription
-- keep dual-source capture for validation only until source mixing/alignment is implemented
+For Rust-only validation:
 
----
+```powershell
+cd .\app\src-tauri
+cargo check
+```
 
-## 10) Common Windows-specific gotchas
+## Missing Icon Or Build Asset Issues
 
-- PowerShell execution policy blocks venv activation scripts.
-- Long path or permission quirks when running from protected directories.
-- Antivirus can occasionally quarantine build artifacts.
-- Running multiple audio-heavy apps can degrade capture reliability.
-- Device hot-swaps during capture can produce partial chunks.
+Symptoms:
+
+- Tauri build complains about missing icons.
+- Packaging fails because an asset path is missing.
+
+Fix:
+
+- confirm expected icon files exist under `app/src-tauri/icons/`
+- avoid moving/removing Tauri assets without updating `tauri.conf.json`
+- re-run `npm run tauri:dev`
+
+## Git And GitHub Workflow Issues
+
+Symptoms:
+
+- push rejected
+- branch behind remote
+- accidental merge conflict before demo
+- doc branch conflicts with active implementation branch
+
+Safe default:
+
+```powershell
+git status
+git fetch origin
+git rebase origin/<branch-name>
+```
+
+Conflict flow:
+
+```powershell
+git status
+# edit conflicted files
+git add <resolved-files>
+git rebase --continue
+```
+
+Abort if needed:
+
+```powershell
+git rebase --abort
+```
+
+Practical advice:
+
+- Keep doc-only changes separate from backend/search/session workflow work.
+- Avoid rebasing over active uncommitted changes.
+- Run `git status` before and after every demo-prep change.
+
+## Windows-Specific Gotchas
+
+- PowerShell execution policy can block venv activation.
+- Protected folders can cause path or permission errors.
+- Antivirus may slow or quarantine build artifacts.
+- Audio device hot-swaps during recording can produce partial chunks.
+- Multiple conferencing/media apps can compete for audio devices.
 
 Recommended habits:
 
-- run from a normal user directory
-- keep paths short/simple
-- avoid changing audio device mid-capture
-- close unnecessary media/conferencing apps before recording
-
----
-
-## 11) Quick health check commands
-
-Run these before demos:
-
-```powershell
-python -m local_meeting_notes.app init
-python -m local_meeting_notes.app db bootstrap
-python -m local_meeting_notes.app audio devices
-python -m local_meeting_notes.app llm check
-cd .\app; npm run build
-```
-
-If any command fails, resolve it before live demo flow.
+- work from a normal user project directory
+- keep paths short
+- use a wired microphone for demos where possible
+- avoid changing audio devices mid-recording
+- close unnecessary audio apps before capture

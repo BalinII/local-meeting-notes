@@ -412,6 +412,7 @@ def fetch_session_library_rows(connection: sqlite3.Connection, limit: int = 500)
 def search_capture_content(
     connection: sqlite3.Connection,
     query: str,
+    scopes: list[str] | None = None,
     limit: int = 120,
 ) -> list[sqlite3.Row]:
     cleaned_query = query.strip().lower()
@@ -419,6 +420,24 @@ def search_capture_content(
         return []
     like_query = f"%{cleaned_query}%"
     safe_limit = max(1, min(int(limit), 500))
+    allowed_scopes = {
+        "session",
+        "summary",
+        "action",
+        "decision",
+        "follow_up",
+        "blocker_risk",
+        "open_question",
+        "transcript",
+    }
+    selected_scopes = [scope for scope in (scopes or []) if scope in allowed_scopes]
+    scope_filter = ""
+    parameters: list[object] = [like_query]
+    if selected_scopes:
+        placeholders = ", ".join("?" for _ in selected_scopes)
+        scope_filter = f" AND item_type IN ({placeholders})"
+        parameters.extend(selected_scopes)
+    parameters.append(safe_limit)
     return connection.execute(
         """
         WITH searchable AS (
@@ -429,7 +448,8 @@ def search_capture_content(
                 'session' AS item_type,
                 'display_name' AS field_name,
                 meetings.title AS content,
-                meetings.updated_at AS item_updated_at
+                meetings.updated_at AS item_updated_at,
+                10 AS rank_weight
             FROM meetings
             WHERE meetings.capture_id <> ''
 
@@ -442,7 +462,8 @@ def search_capture_content(
                 'session' AS item_type,
                 'capture_id' AS field_name,
                 meetings.capture_id AS content,
-                meetings.updated_at AS item_updated_at
+                meetings.updated_at AS item_updated_at,
+                20 AS rank_weight
             FROM meetings
             WHERE meetings.capture_id <> ''
 
@@ -455,7 +476,8 @@ def search_capture_content(
                 'transcript' AS item_type,
                 COALESCE(transcript_segments.speaker_label, 'transcript') AS field_name,
                 transcript_segments.content AS content,
-                meetings.updated_at AS item_updated_at
+                meetings.updated_at AS item_updated_at,
+                90 AS rank_weight
             FROM transcript_segments
             INNER JOIN meetings ON meetings.capture_id = transcript_segments.capture_id
             WHERE transcript_segments.content IS NOT NULL
@@ -469,7 +491,8 @@ def search_capture_content(
                 'summary' AS item_type,
                 summaries.summary_type AS field_name,
                 summaries.content AS content,
-                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at,
+                30 AS rank_weight
             FROM summaries
             INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
 
@@ -482,7 +505,8 @@ def search_capture_content(
                 'summary' AS item_type,
                 summaries.summary_type || '_evidence' AS field_name,
                 summaries.evidence_snippet AS content,
-                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(summaries.reviewed_at, summaries.generated_at, meetings.updated_at) AS item_updated_at,
+                55 AS rank_weight
             FROM summaries
             INNER JOIN meetings ON meetings.capture_id = summaries.capture_id
             WHERE summaries.evidence_snippet IS NOT NULL
@@ -496,9 +520,11 @@ def search_capture_content(
                 'action' AS item_type,
                 'actions' AS field_name,
                 COALESCE(actions.reviewed_description, actions.description) AS content,
-                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at,
+                CASE WHEN actions.reviewed_at IS NOT NULL OR actions.review_status IN ('accepted', 'edited') THEN 25 ELSE 40 END AS rank_weight
             FROM actions
             INNER JOIN meetings ON meetings.capture_id = actions.capture_id
+            WHERE actions.review_status <> 'rejected'
 
             UNION ALL
 
@@ -509,10 +535,12 @@ def search_capture_content(
                 'action' AS item_type,
                 'action_evidence' AS field_name,
                 actions.evidence_snippet AS content,
-                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(actions.reviewed_at, actions.generated_at, meetings.updated_at) AS item_updated_at,
+                65 AS rank_weight
             FROM actions
             INNER JOIN meetings ON meetings.capture_id = actions.capture_id
             WHERE actions.evidence_snippet IS NOT NULL
+                AND actions.review_status <> 'rejected'
 
             UNION ALL
 
@@ -523,9 +551,11 @@ def search_capture_content(
                 'decision' AS item_type,
                 'decisions' AS field_name,
                 COALESCE(decisions.reviewed_description, decisions.description) AS content,
-                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at,
+                CASE WHEN decisions.reviewed_at IS NOT NULL OR decisions.review_status IN ('accepted', 'edited') THEN 22 ELSE 38 END AS rank_weight
             FROM decisions
             INNER JOIN meetings ON meetings.capture_id = decisions.capture_id
+            WHERE decisions.review_status <> 'rejected'
 
             UNION ALL
 
@@ -536,10 +566,12 @@ def search_capture_content(
                 'decision' AS item_type,
                 'decision_evidence' AS field_name,
                 decisions.evidence_snippet AS content,
-                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(decisions.reviewed_at, decisions.generated_at, meetings.updated_at) AS item_updated_at,
+                63 AS rank_weight
             FROM decisions
             INNER JOIN meetings ON meetings.capture_id = decisions.capture_id
             WHERE decisions.evidence_snippet IS NOT NULL
+                AND decisions.review_status <> 'rejected'
 
             UNION ALL
 
@@ -550,9 +582,11 @@ def search_capture_content(
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.follow_up_type AS field_name,
                 COALESCE(follow_ups.reviewed_description, follow_ups.description) AS content,
-                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at,
+                CASE WHEN follow_ups.reviewed_at IS NOT NULL OR follow_ups.review_status IN ('accepted', 'edited') THEN 28 ELSE 42 END AS rank_weight
             FROM follow_ups
             INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
+            WHERE follow_ups.review_status <> 'rejected'
 
             UNION ALL
 
@@ -563,10 +597,12 @@ def search_capture_content(
                 follow_ups.follow_up_type AS item_type,
                 follow_ups.follow_up_type || '_evidence' AS field_name,
                 follow_ups.evidence_snippet AS content,
-                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at
+                COALESCE(follow_ups.reviewed_at, follow_ups.generated_at, meetings.updated_at) AS item_updated_at,
+                68 AS rank_weight
             FROM follow_ups
             INNER JOIN meetings ON meetings.capture_id = follow_ups.capture_id
             WHERE follow_ups.evidence_snippet IS NOT NULL
+                AND follow_ups.review_status <> 'rejected'
         )
         SELECT
             capture_id,
@@ -576,13 +612,15 @@ def search_capture_content(
             field_name,
             content,
             item_updated_at,
+            rank_weight,
             REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') AS lowered_content
         FROM searchable
         WHERE REPLACE(LOWER(COALESCE(content, '')), CHAR(10), ' ') LIKE ?
-        ORDER BY item_updated_at DESC, capture_id DESC
+        """ + scope_filter + """
+        ORDER BY rank_weight ASC, item_updated_at DESC, capture_id DESC
         LIMIT ?
         """,
-        (like_query, safe_limit),
+        parameters,
     ).fetchall()
 
 

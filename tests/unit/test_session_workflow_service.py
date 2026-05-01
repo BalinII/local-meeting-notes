@@ -388,6 +388,123 @@ def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
     assert refreshed["workflow_state"] == "carried_forward"
 
 
+def test_session_library_supports_pragmatic_sorting_and_filters(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    older = service.create_session("Older Review")
+    newer = service.create_session("Newer Export")
+    failed = service.create_session("Failed Capture")
+
+    with connection_context(config.database_path) as connection:
+        update_meeting_fields(
+            connection,
+            str(older["capture_id"]),
+            status="review_ready",
+            updated_at="2026-04-20T00:00:00+00:00",
+        )
+        update_meeting_fields(
+            connection,
+            str(newer["capture_id"]),
+            status="exported",
+            exported_at="2026-04-22T00:00:00+00:00",
+            updated_at="2026-04-22T00:00:00+00:00",
+        )
+        update_meeting_fields(
+            connection,
+            str(failed["capture_id"]),
+            status="processing_failed",
+            last_error="Transcription failed",
+            updated_at="2026-04-21T00:00:00+00:00",
+        )
+        connection.commit()
+
+    newest = service.session_library(sort="newest")["sessions"]
+    oldest = service.session_library(sort="oldest")["sessions"]
+
+    assert [session["capture_id"] for session in newest] == [
+        newer["capture_id"],
+        failed["capture_id"],
+        older["capture_id"],
+    ]
+    assert [session["capture_id"] for session in oldest] == [
+        older["capture_id"],
+        failed["capture_id"],
+        newer["capture_id"],
+    ]
+    assert [session["capture_id"] for session in service.session_library(filter_status="review-ready")["sessions"]] == [older["capture_id"]]
+    assert [session["capture_id"] for session in service.session_library(filter_status="exported")["sessions"]] == [newer["capture_id"]]
+    assert [session["capture_id"] for session in service.session_library(filter_status="needs-attention")["sessions"]] == [failed["capture_id"]]
+
+
+def test_search_scopes_deduplicate_noisy_matches_and_prefer_reviewed_content(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session("Search Polish")
+    with connection_context(config.database_path) as connection:
+        insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                description="Confirm the search polish action.",
+                owner_name="Unknown",
+                status="open",
+                evidence_snippet="Confirm the search polish action.",
+            ),
+        )
+        decision_id = insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                description="Search should show generated duplicate wording.",
+                evidence_snippet="Decision: generated duplicate wording.",
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE decisions
+            SET review_status = 'edited',
+                reviewed_description = 'Search should show reviewed wording first.',
+                reviewed_at = '2026-04-22T00:00:00+00:00'
+            WHERE id = ?
+            """,
+            (decision_id,),
+        )
+        connection.commit()
+
+    all_results = service.search_workspace("search", scope="all")
+    action_results = service.search_workspace("search", scope="actions")
+    decision_results = service.search_workspace("search", scope="decisions")
+
+    assert all_results["raw_matches"] > all_results["total_matches"]
+    assert action_results["total_matches"] == 1
+    assert action_results["sessions"][0]["matches"][0]["item_type"] == "action"
+    assert decision_results["total_matches"] == 1
+    assert "reviewed wording" in decision_results["sessions"][0]["matches"][0]["snippet"]
+    assert "generated duplicate" not in decision_results["sessions"][0]["matches"][0]["snippet"]
+
+
 def test_search_handles_legacy_summary_schema_without_review_columns(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     config.database_path.parent.mkdir(parents=True, exist_ok=True)

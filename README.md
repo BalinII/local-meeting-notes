@@ -1,244 +1,152 @@
 # Local Meeting Notes
 
-Local Meeting Notes is a Windows-first, local-first desktop app scaffold for capturing meeting context, preparing transcripts, and generating notes without joining meetings as a bot.
+Local Meeting Notes is a Windows-first, local-first desktop prototype for recording meetings, transcribing audio, generating meeting notes, reviewing extracted outcomes, and exporting shareable artifacts without joining meetings as a bot.
 
-Phase 1 focuses on repository structure only:
-- Tauri desktop shell scaffold
-- Python backend package layout
-- SQLite-ready local storage paths
-- Placeholder modules for the future meeting pipeline
-- Windows-oriented setup and helper scripts
+It is an internal prototype, not a production SaaS app. Accuracy, traceability, and honest uncertainty matter more than polish.
 
-Phase 2 adds a minimal backend skeleton:
-- config loading
-- logging
-- SQLite schema bootstrap
-- base record models
-- mock meeting session CLI
+## Current Product Shape
 
-Phase 3 adds the first real MVP capability:
-- Windows-oriented local audio capture
-- manual audio start and stop from the CLI
-- chunked `.wav` output under `backend/data/audio`
-- system loopback plus microphone capture where the local machine supports it
+The current app supports a local recording-to-review workflow:
 
-Phase 4 adds the first local transcription pipeline:
-- batch transcription of captured audio chunks
-- SQLite persistence of transcript chunk metadata and text
-- CLI commands to transcribe a capture and inspect transcript segments
+1. create a new recording session and optionally name the meeting
+2. record microphone audio locally
+3. pause, resume, stop, and process the session
+4. review summaries, actions, decisions, follow-ups, blockers/risks, and open questions
+5. accept, edit, or reject extracted items
+6. export Markdown, HTML, or JSON
+7. browse recent sessions, search across local content, and use global action/memory views
 
-Phase 5 adds offline diarization:
-- batch speaker-turn segmentation for captured audio
-- SQLite persistence of diarization segments
-- generic speaker-labelled transcript inspection
+The safest demo mode is microphone-only recording. System audio / loopback capture is constrained and hardware-dependent; parallel mic plus loopback processing is not treated as a reliable aligned transcript yet.
 
-Phase 6 adds local summary and extraction:
-- executive and detailed summaries generated from persisted transcript segments
-- SQLite persistence for summaries, actions, decisions, and follow-ups
-- CLI commands to generate and inspect evidence-backed outputs
-- conservative ownership handling that tolerates imperfect diarization
+## What It Does
 
-Phase 6C adds a local LLM provider option:
-- Ollama-first local LLM support for summaries and extraction
-- strict JSON output with validation and normalization
-- clean heuristic fallback on invalid output, timeout, or runtime failure
-- configurable provider selection from config or CLI
+- Runs locally on Windows through a Tauri desktop shell.
+- Stores data locally in SQLite and the filesystem.
+- Captures audio into local chunks.
+- Transcribes captured audio locally.
+- Applies generic speaker labels with best-effort diarization.
+- Generates executive and detailed summaries.
+- Extracts actions, decisions, follow-ups, blockers/risks, and open questions.
+- Preserves evidence snippets and provider/model metadata where available.
+- Supports human review before export.
+- Keeps reviewed text separate from generated text.
+- Falls back to heuristic summary/extraction when local LLM output is unavailable, invalid, weak, or timed out.
 
-Phase 6D tunes local LLM output quality:
-- transcript cleaning before prompting to reduce ASR noise
-- stricter prompts that tell the model to omit weak or garbled items
-- post-processing filters that reject poorly grounded summaries and outcomes
-- cleaner meeting-note wording while preserving evidence snippets and timestamps
+## What It Does Not Do
 
-Phase 7 adds output review and export:
-- Markdown, HTML, and JSON exports for persisted capture outputs
-- a basic desktop review screen for summaries and extracted items
-- visible uncertainty for unknown or unconfirmed ownership
-- evidence snippets and provider metadata in review/export views
+- It does not join meetings as a visible bot.
+- It does not implement Microsoft auth.
+- It does not implement Outlook or Teams production integration.
+- It does not identify real participants beyond generic or transcript-derived labels.
+- It does not provide cloud sync, multi-user collaboration, enterprise auth, or production observability.
 
-Phase 8 adds a lightweight human review workflow:
-- extracted actions, decisions, follow-ups, risks, and open questions can be accepted, edited, or rejected
-- reviewed state is stored locally in SQLite beside the generated output
-- exports prefer reviewed text and omit rejected extracted items from Markdown and HTML
-
-Phase 9 adds cross-session memory workspace features:
-- dedicated session library view and API payloads for all locally persisted sessions
-- cross-session search across display names, summaries, and extracted outcomes
-- global action tracker with workflow states (`open`, `done`, `dismissed`, `carried_forward`)
-- lightweight finalisation state (`final`) for reviewed sessions
-- memory views for decisions, blockers/risks, and open questions
-
-Current stabilization notes:
-- The desktop UI is currently a review/export workspace for persisted captures, not a full recording-control dashboard.
-- Session recording commands exist in the backend CLI and Tauri command layer, but capture reliability remains a validation focus.
-- Reviewed extracted items are protected from destructive re-extraction; re-run extraction only before human review or after intentionally resetting review state.
-- Mic and loopback audio are captured as separate source files. Transcription currently expects one source timeline and will reject parallel mic+loopback captures until source mixing/alignment is implemented.
-
-No participant identity mapping, Microsoft auth, or Teams bot logic is implemented.
-
-## Phase 1 Repo Structure
+## Repository Map
 
 ```text
-local-meeting-notes/
-|-- app/
-|   |-- package.json
-|   |-- tsconfig.json
-|   |-- vite.config.ts
-|   |-- index.html
-|   |-- src/
-|   |   |-- App.tsx
-|   |   |-- main.tsx
-|   |   |-- env.d.ts
-|   |   |-- components/
-|   |   |   |-- AppShell.tsx
-|   |   |   `-- StatusCard.tsx
-|   |   |-- lib/
-|   |   |   `-- placeholders.ts
-|   |   `-- styles/
-|   |       `-- app.css
-|   `-- src-tauri/
-|       |-- Cargo.toml
-|       |-- build.rs
-|       |-- tauri.conf.json
-|       `-- src/
-|           |-- lib.rs
-|           `-- main.rs
-|-- backend/
-|   |-- pyproject.toml
-|   |-- data/
-|   |   |-- audio/
-|   |   |-- exports/
-|   |   |-- meetings/
-|   |   |-- transcripts/
-|   |   `-- tmp/
-|   `-- src/
-|       `-- local_meeting_notes/
-|           |-- app.py
-|           |-- config.py
-|           |-- bootstrap.py
-|           |-- api/
-|           |-- core/
-|           |-- models/
-|           |-- services/
-|           |-- utils/
-|           |-- meeting_detector/
-|           |-- audio_capture/
-|           |-- transcription_engine/
-|           |-- diarization_engine/
-|           |-- speaker_attribution/
-|           |-- summarizer/
-|           |-- action_extractor/
-|           |-- storage/
-|           |-- microsoft_integration/
-|           `-- export_service/
-|-- docs/
-|   |-- architecture/
-|   |   `-- phase-1-overview.md
-|   `-- setup/
-|       `-- windows-local-dev.md
-|-- scripts/
-|   |-- dev/
-|   |   |-- start-backend.ps1
-|   |   `-- start-frontend.ps1
-|   `-- windows/
-|       `-- setup-local-env.ps1
-|-- tests/
-|   |-- integration/
-|   |   `-- test_scaffold.py
-|   `-- unit/
-|       `-- test_bootstrap.py
-|-- .env.example
-|-- .gitignore
-`-- CODEX_TASK_1.md
+app/                         Tauri + React desktop shell
+backend/src/local_meeting_notes/
+  audio_capture/             local Windows audio capture
+  transcription_engine/      batch transcription
+  diarization_engine/        generic speaker-turn labeling
+  summarizer/                summary generation
+  action_extractor/          actions/decisions/follow-ups extraction
+  export_service/            markdown/html/json export
+  storage/                   SQLite schema and repository helpers
+  local_llm/                 Ollama-first local LLM client boundary
+docs/
+  current-status.md
+  troubleshooting.md
+  demo/demo-walkthrough.md
+  roadmap.md
 ```
-
-## Placeholder Modules
-
-The backend includes starter packages for:
-- `meeting_detector`
-- `audio_capture`
-- `transcription_engine`
-- `diarization_engine`
-- `summarizer`
-- `action_extractor`
-- `storage`
-- `export_service`
-- `local_llm`
-
-### Data and persistence
-
-- SQLite database for generated/reviewed records
-- Local filesystem for audio chunks, transcripts, exports, and temp artifacts
 
 ## Prerequisites
 
 - Windows 11 preferred
 - Python 3.12+
 - Node.js 20+
-- Rust stable (MSVC toolchain)
-- WebView2 runtime (for Tauri)
-- (Optional but recommended) Ollama local runtime for `local_llm` provider
+- Rust stable with MSVC toolchain
+- WebView2 runtime for Tauri
+- Optional: Ollama for the `local_llm` provider
 
-## Quick start (developer)
+## Quick Start
 
-### 1) Clone and set up Python environment
+From repo root:
 
 ```powershell
-git clone <repo-url>
-cd local-meeting-notes
 python -m venv .venv
 (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& .\.venv\Scripts\Activate.ps1)
+python -m pip install --upgrade pip
 pip install -e .\backend
-```
-
-### 2) Initialize backend and database
-
-```powershell
 python -m local_meeting_notes.app init
 python -m local_meeting_notes.app db bootstrap
-python -m local_meeting_notes.app session start --title "Mock Local Meeting"
-python -m local_meeting_notes.app session stop
+```
+
+Install and run the desktop shell:
+
+```powershell
+cd .\app
+npm install
+npm run tauri:dev
+```
+
+In the app:
+
+1. Enter a meeting/call name if useful.
+2. Click `New Recording`.
+3. Use `Pause`, `Resume`, and `Stop and Process`.
+4. Review generated notes.
+5. Export Markdown, HTML, or JSON.
+
+## Backend CLI Essentials
+
+Use these from repo root with the virtual environment active.
+
+```powershell
 python -m local_meeting_notes.app audio devices
-python -m local_meeting_notes.app audio start
-python -m local_meeting_notes.app audio status
-python -m local_meeting_notes.app audio stop
-python -m local_meeting_notes.app transcript transcribe --capture-id "<capture-id>"
-python -m local_meeting_notes.app transcript status --capture-id "<capture-id>"
-python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
-python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
-python -m local_meeting_notes.app diarize status --capture-id "<capture-id>"
-python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
-python -m local_meeting_notes.app llm check
-python -m local_meeting_notes.app summary generate --capture-id "<capture-id>"
-python -m local_meeting_notes.app summary show --capture-id "<capture-id>"
-python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
-python -m local_meeting_notes.app actions list --capture-id "<capture-id>"
-python -m local_meeting_notes.app summary generate --capture-id "<capture-id>" --provider local_llm
-python -m local_meeting_notes.app actions extract --capture-id "<capture-id>" --provider local_llm
+python -m local_meeting_notes.app session create --title "Demo Meeting"
+python -m local_meeting_notes.app session record-start --capture-id "<capture-id>" --no-loopback
+python -m local_meeting_notes.app session pause --capture-id "<capture-id>"
+python -m local_meeting_notes.app session resume --capture-id "<capture-id>" --no-loopback
+python -m local_meeting_notes.app session record-stop --capture-id "<capture-id>"
+```
+
+Review/export:
+
+```powershell
 python -m local_meeting_notes.app review recent --limit 12
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
-python -m local_meeting_notes.app review update-item --item-type action --item-id 1 --review-status edited --description "Reviewed action text"
-python -m local_meeting_notes.app session library
-python -m local_meeting_notes.app session search --query "roadmap"
-python -m local_meeting_notes.app actions workspace --limit 200
-python -m local_meeting_notes.app actions update-workflow --item-type action --item-id 1 --workflow-status carried_forward
-python -m local_meeting_notes.app session finalise --capture-id "<capture-id>"
-python -m local_meeting_notes.app memory list --item-type decisions
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
 python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
 ```
 
-### 3) (Optional) Configure Ollama-backed local LLM
+Workspace:
+
+```powershell
+python -m local_meeting_notes.app session library
+python -m local_meeting_notes.app session library --sort oldest --filter review-ready
+python -m local_meeting_notes.app session search --query "decision"
+python -m local_meeting_notes.app session search --query "decision" --scope decisions
+python -m local_meeting_notes.app actions workspace --limit 200
+python -m local_meeting_notes.app memory list --item-type decisions
+```
+
+The Session Library is a local session browser. It shows the display name first, capture id second, then lifecycle, review/final/export status, timestamps, and compact provider/model metadata when available. The desktop library supports `newest` and `oldest` sorting plus simple filters for all sessions, review-ready sessions, finalised sessions, exported sessions, and sessions needing attention.
+
+Search is also local and SQLite-backed. Results are grouped by session, prefer reviewed/effective extracted content where it exists, hide rejected extracted items, reduce duplicate evidence/content matches, and cap noisy repeats per session. Search scopes are intentionally lightweight: all, sessions, summaries, actions, decisions, blockers/risks, and open questions.
+
+## Optional Local LLM Setup
 
 Start Ollama and pull a model:
 
 ```powershell
 ollama serve
 ollama pull llama3.1:8b
+python -m local_meeting_notes.app llm check
 ```
 
-Set `.env` values (example):
+Example `.env` values:
 
 ```dotenv
 SUMMARY_PROVIDER=local_llm
@@ -249,92 +157,48 @@ LOCAL_LLM_TIMEOUT_SECONDS=45
 LOCAL_LLM_MAX_TRANSCRIPT_CHARS=12000
 ```
 
-### 4) Run frontend and desktop shell
+If Ollama is unavailable, slow, returns invalid JSON, or produces weakly grounded content, the workflow falls back to heuristic behavior rather than failing the whole capture.
+
+## Validation Commands
+
+Backend tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit\test_session_workflow_service.py -q
+```
+
+Frontend build:
 
 ```powershell
 cd .\app
-npm install
-npm run tauri:dev
+npm run build
 ```
 
-## Core CLI workflow (backend)
-
-Use these commands from repo root with the Python venv activated.
-
-### Session + audio capture
+Tauri/Rust check:
 
 ```powershell
-python -m local_meeting_notes.app session start --title "Demo Meeting"
-python -m local_meeting_notes.app audio devices
-python -m local_meeting_notes.app audio start
-python -m local_meeting_notes.app audio status
-python -m local_meeting_notes.app audio stop
-python -m local_meeting_notes.app session stop
+cd .\app\src-tauri
+cargo check
 ```
 
-### Transcription + diarization
+## Documentation
 
-```powershell
-python -m local_meeting_notes.app transcript transcribe --capture-id "<capture-id>"
-python -m local_meeting_notes.app transcript list --capture-id "<capture-id>"
-python -m local_meeting_notes.app diarize run --capture-id "<capture-id>"
-python -m local_meeting_notes.app diarize list --capture-id "<capture-id>"
-```
+- Demo guide: [`docs/demo/demo-walkthrough.md`](docs/demo/demo-walkthrough.md)
+- Troubleshooting: [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- Current status: [`docs/current-status.md`](docs/current-status.md)
+- Roadmap: [`docs/roadmap.md`](docs/roadmap.md)
+- Windows setup: [`docs/setup/windows-local-dev.md`](docs/setup/windows-local-dev.md)
 
-### Summaries + extracted outcomes
+## Known Limitations
 
-```powershell
-python -m local_meeting_notes.app summary generate --capture-id "<capture-id>"
-python -m local_meeting_notes.app actions extract --capture-id "<capture-id>"
-python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
-```
+- Audio capture reliability varies by Windows device and driver.
+- Microphone-only is the recommended current mode for demos.
+- System audio capture remains constrained and should be described honestly.
+- Diarization is generic and imperfect.
+- Speaker ownership may remain `Unknown` or `Unconfirmed speaker`.
+- Search is SQLite-backed and useful for obvious persisted terms, with lightweight scopes and duplicate cleanup, but not a full-text search product.
+- Local LLM output quality depends on runtime health and model choice.
+- Human review is expected before sharing exports.
+- Reviewed extracted items are protected from destructive re-extraction.
 
-### Review + export
-
-```powershell
-python -m local_meeting_notes.app review update-item --item-type action --item-id 1 --review-status edited --description "Reviewed action text"
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
-```
-
-## Testing and checks
-
-From repo root:
-
-```powershell
-Set-Location .\app
-npm run tauri:dev
-```
-
-The desktop shell now opens a lightweight review workspace:
-- enter a capture id
-- load persisted summaries and extracted outputs
-- expand evidence snippets
-- edit, save, accept, or reject extracted items
-- export Markdown, HTML, or JSON through the local backend
-
-## Notes
-
-- The app is designed for local data storage first.
-- SQLite remains the default persistence target.
-- Microsoft integration is metadata-oriented only in this scaffold.
-- Mock transcript segments are used for the CLI-backed demo flow.
-- Audio capture writes timestamped local chunks into `backend/data/audio/<capture-id>/`.
-- Transcript segments are persisted per chunk in SQLite, including chunk path and failure state.
-- Diarization segments are persisted separately and used to apply best-effort generic speaker labels onto transcript rows.
-- Summaries, actions, decisions, and follow-ups are persisted in SQLite by `capture_id`.
-- Summary and extraction rows also store provider metadata so you can tell whether the heuristic or local LLM path produced them.
-- Summary and extraction outputs include transcript evidence snippets where practical.
-- Extracted output rows keep generated text and reviewed text separately, with `generated`, `accepted`, `edited`, or `rejected` review status.
-- Markdown and HTML exports use reviewed descriptions and reviewed owner text where present, and skip rejected extracted items.
-- JSON exports include generated, reviewed, effective, and review status fields for local inspection.
-- Ownership may remain `Unknown` or `Unconfirmed speaker` when diarization is weak or missing.
-- `local_llm` currently targets Ollama first, but the client boundary is designed so another local OpenAI-compatible runtime can be swapped in later.
-- If Ollama is unreachable, times out, or returns invalid JSON, the app falls back to the heuristic provider instead of failing the whole pipeline.
-- If the model output is weak, noisy, or not clearly grounded in evidence, the app omits it or falls back rather than polishing unsupported claims.
-- Exports are written under `backend/data/exports/<capture-id>/`.
-- The review UI surfaces uncertain ownership with `Unknown` or `Unconfirmed speaker` badges rather than hiding it.
-- `audio stop` requests a clean stop and may wait until the current chunk finishes writing.
-- System loopback plus microphone capture is best-effort on Windows and may require trying a different output device or sample rate.
-- No Teams bot, cloud pipeline, or production capture flow is included.
+No Teams bot, cloud pipeline, Microsoft auth, or production Outlook integration is implemented.

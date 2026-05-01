@@ -18,6 +18,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -38,6 +39,7 @@ button:disabled {
 }
 
 input,
+select,
 textarea {
   min-width: min(420px, 100%);
   border: 1px solid rgba(23, 32, 51, 0.16);
@@ -231,6 +233,25 @@ textarea {
   gap: 10px;
 }
 
+.workspace-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.workspace-controls label {
+  color: #435066;
+  display: grid;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.workspace-controls select {
+  min-width: 180px;
+}
+
 .workspace-search {
   margin-bottom: 12px;
   min-width: 100%;
@@ -242,15 +263,32 @@ textarea {
   border: 1px solid rgba(23, 32, 51, 0.08);
   color: #172033;
   display: grid;
-  gap: 6px;
-  justify-items: start;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px;
   text-align: left;
 }
 
 .session-row.active {
   border-color: rgba(25, 50, 79, 0.32);
   box-shadow: inset 0 0 0 1px rgba(25, 50, 79, 0.12);
+}
+
+.session-browser .session-row {
+  cursor: pointer;
+}
+
+.session-row-main {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.session-row-main strong {
+  display: block;
+  font-size: 1.02rem;
+  overflow-wrap: anywhere;
 }
 
 .session-row span {
@@ -536,8 +574,16 @@ textarea {
 }
 
 .workspace-group {
-  border-top: 1px solid rgba(23, 32, 51, 0.08);
-  padding-top: 14px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  padding: 14px;
+}
+
+.workspace-group.active {
+  border-color: #3f83cc;
+  box-shadow: 0 0 0 2px rgba(63, 131, 204, 0.14);
 }
 
 .workspace-group-heading {
@@ -562,6 +608,19 @@ textarea {
 .workspace-item {
   border-left: 3px solid rgba(25, 50, 79, 0.18);
   padding-left: 12px;
+}
+
+.workspace-item p {
+  color: #334158;
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+
+.workspace-item mark {
+  background: #fff3a6;
+  border-radius: 4px;
+  color: inherit;
+  padding: 0 2px;
 }
 
 .workspace-item strong {

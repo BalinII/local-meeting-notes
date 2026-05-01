@@ -17,8 +17,12 @@ import {
   updateActionWorkflow,
   type ActionTrackerItem,
   type ExtractedOutput,
+  type LibraryFilter,
+  type LibrarySort,
   type RecentCapture,
   type ReviewPayload,
+  type SearchScope,
+  type SearchSessionGroup,
   type SessionLibraryEntry,
   type SessionOverview,
   type SummaryOutput,
@@ -36,8 +40,12 @@ export function AppShell() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [library, setLibrary] = useState<SessionLibraryEntry[]>([]);
+  const [librarySort, setLibrarySort] = useState<LibrarySort>("newest");
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
+  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<{ total_matches: number; sessions: { capture_id: string; display_name: string; lifecycle_state?: string | null; matches: { item_type: string; field_name: string; snippet: string }[] }[] }>({ total_matches: 0, sessions: [] });
+  const [searchScope, setSearchScope] = useState<SearchScope>("all");
+  const [searchResults, setSearchResults] = useState<{ total_matches: number; raw_matches?: number; sessions: SearchSessionGroup[] }>({ total_matches: 0, sessions: [] });
   const [actionItems, setActionItems] = useState<ActionTrackerItem[]>([]);
   const [memoryType, setMemoryType] = useState<"decisions" | "blockers_risks" | "open_questions">("decisions");
   const [memoryItems, setMemoryItems] = useState<ActionTrackerItem[]>([]);
@@ -55,6 +63,10 @@ export function AppShell() {
     void refreshMemory();
   }, [memoryType]);
 
+  useEffect(() => {
+    void refreshLibrary();
+  }, [librarySort, libraryFilter]);
+
   async function refreshAll() {
     await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions()]);
   }
@@ -64,7 +76,12 @@ export function AppShell() {
   }
 
   async function refreshLibrary() {
-    setLibrary(await listSessionLibrary());
+    setIsLibraryLoading(true);
+    try {
+      setLibrary(await listSessionLibrary(librarySort, libraryFilter));
+    } finally {
+      setIsLibraryLoading(false);
+    }
   }
 
   async function refreshActions() {
@@ -84,7 +101,7 @@ export function AppShell() {
       setPayload(nextPayload);
       setCaptureId(trimmed);
       setSelectedCaptureId(trimmed);
-      setStatus(`Loaded ${nextPayload.capture_id}`);
+      setStatus(`Opened ${nextPayload.metadata.display_name || nextPayload.capture_id}`);
       setActiveTab("review");
     } finally {
       setIsLoading(false);
@@ -100,9 +117,9 @@ export function AppShell() {
     setIsSearching(true);
     setSearchMessage("Searching...");
     try {
-      const next = await searchAcrossSessions(searchQuery);
+      const next = await searchAcrossSessions(searchQuery, searchScope);
       setSearchResults(next);
-      setSearchMessage(next.total_matches ? `Found ${next.total_matches} matches.` : "No matches found.");
+      setSearchMessage(next.total_matches ? `Found ${next.total_matches} useful matches in ${next.sessions.length} sessions.` : "No matches found.");
     } catch (error) {
       setSearchMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -225,7 +242,12 @@ export function AppShell() {
     }
   }
 
-  const filteredLibrary = useMemo(() => library, [library]);
+  const librarySummary = useMemo(() => {
+    const count = library.length;
+    if (isLibraryLoading) return "Loading local sessions...";
+    if (!count) return libraryFilter === "all" ? "No saved sessions yet." : "No sessions match this filter.";
+    return `${count} ${count === 1 ? "session" : "sessions"} shown · ${librarySort === "newest" ? "newest first" : "oldest first"}`;
+  }, [isLibraryLoading, library.length, libraryFilter, librarySort]);
 
   return (
     <main className="app-shell">
@@ -308,35 +330,104 @@ export function AppShell() {
 
       {activeTab === "library" && (
         <section className="panel workspace-panel">
-          <div className="panel-heading compact"><h2>Session Library</h2><button className="secondary-button" onClick={() => void refreshLibrary()}>Refresh</button></div>
-          <div className="session-list">
-            {filteredLibrary.map((session) => (
-              <button className="session-row" key={session.capture_id} onClick={() => void loadCapture(session.capture_id)}>
-                <strong>{session.display_name}</strong>
-                <span>{session.capture_id}</span>
-                <div className="badge-row"><span className={`status-pill session-${session.lifecycle_state}`}>{session.lifecycle_state}</span>{session.reviewed_items_exist ? <span className="status-pill review-edited">reviewed</span> : null}{session.exported_at ? <span className="status-pill subtle">exported</span> : null}</div>
-              </button>
-            ))}
+          <div className="panel-heading compact">
+            <div>
+              <h2>Session Library</h2>
+              <p className="muted">{librarySummary}</p>
+            </div>
+            <button className="secondary-button" onClick={() => void refreshLibrary()} disabled={isLibraryLoading}>{isLibraryLoading ? "Refreshing..." : "Refresh"}</button>
           </div>
+          <div className="workspace-controls">
+            <label>
+              <span>Sort</span>
+              <select value={librarySort} onChange={(event) => setLibrarySort(event.target.value as LibrarySort)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </label>
+            <label>
+              <span>Filter</span>
+              <select value={libraryFilter} onChange={(event) => setLibraryFilter(event.target.value as LibraryFilter)}>
+                <option value="all">All sessions</option>
+                <option value="review-ready">Review-ready</option>
+                <option value="finalised">Finalised</option>
+                <option value="exported">Exported</option>
+                <option value="needs-attention">Needs attention</option>
+              </select>
+            </label>
+          </div>
+          {isLibraryLoading && !library.length ? (
+            <div className="empty-state">Loading the local session library...</div>
+          ) : !library.length ? (
+            <div className="empty-state">{libraryFilter === "all" ? "No sessions have been saved yet. New recordings will appear here." : "No sessions match the current library filter."}</div>
+          ) : (
+            <div className="session-list session-browser">
+              {library.map((session) => (
+                <article className={`session-row ${session.capture_id === selectedCaptureId ? "active" : ""}`} key={session.capture_id} onClick={() => void loadCapture(session.capture_id)}>
+                  <div className="session-row-main">
+                    <div>
+                      <strong>{session.display_name || session.capture_id}</strong>
+                      <p className="capture-row-meta">{formatDate(session.updated_at || session.created_at)} · {session.capture_id}</p>
+                    </div>
+                    <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
+                      {session.capture_id === selectedCaptureId ? "Open Again" : "Open Session"}
+                    </button>
+                  </div>
+                  <div className="badge-row">
+                    <span className={`status-pill session-${session.lifecycle_state}`}>{formatState(session.lifecycle_state)}</span>
+                    {session.reviewed_items_exist ? <span className="status-pill review-edited">reviewed</span> : null}
+                    {session.lifecycle_state === "final" ? <span className="status-pill review-accepted">final</span> : null}
+                    {session.exported_at ? <span className="status-pill subtle">exported</span> : null}
+                    {session.lifecycle_state === "processing_failed" || session.last_error ? <span className="status-pill warning">needs attention</span> : null}
+                  </div>
+                  {(session.providers.length || session.models.length) ? (
+                    <p className="capture-row-meta">{compactMetadata(session.providers, session.models)}</p>
+                  ) : null}
+                  {session.last_error ? <p className="error-text">{session.last_error}</p> : null}
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
       {activeTab === "search" && (
         <section className="panel workspace-panel">
+          <div className="panel-heading compact">
+            <div>
+              <h2>Search</h2>
+              <p className="muted">{searchMessage}</p>
+            </div>
+          </div>
+          <div className="segmented-control scope-control">
+            {(["all", "sessions", "summaries", "actions", "decisions", "blockers-risks", "open-questions"] as SearchScope[]).map((scope) => (
+              <button key={scope} className={searchScope === scope ? "active" : ""} onClick={() => setSearchScope(scope)}>{scopeLabel(scope)}</button>
+            ))}
+          </div>
           <div className="capture-toolbar compact-grid">
             <input className="workspace-search" placeholder="Search summaries, actions, decisions, follow-ups..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void runSearch(); }} />
             <button onClick={() => void runSearch()} disabled={isSearching}>{isSearching ? "Searching..." : "Search"}</button>
           </div>
-          <p className="muted">{searchMessage} Matches: {searchResults.total_matches}</p>
+          <p className="muted">{searchResults.total_matches ? `${searchResults.total_matches} shown${searchResults.raw_matches && searchResults.raw_matches > searchResults.total_matches ? ` from ${searchResults.raw_matches} local matches after cleanup` : ""}.` : "Matches are grouped by session and capped to keep noisy repeats out of the way."}</p>
           <div className="workspace-group-list">
+            {isSearching ? <div className="empty-state">Searching local persisted content...</div> : null}
+            {!isSearching && searchQuery.trim() && !searchResults.total_matches ? <div className="empty-state">No local matches for this query and scope.</div> : null}
             {searchResults.sessions.map((session) => (
-              <div className="workspace-group" key={session.capture_id}>
-                <div className="workspace-group-heading"><div><h3>{session.display_name}</h3><p>{session.capture_id}</p></div><button className="secondary-button" onClick={() => void loadCapture(session.capture_id)}>Open Session</button></div>
+              <div className={`workspace-group ${session.capture_id === selectedCaptureId ? "active" : ""}`} key={session.capture_id} onClick={() => void loadCapture(session.capture_id)}>
+                <div className="workspace-group-heading">
+                  <div>
+                    <h3>{session.display_name}</h3>
+                    <p>{session.capture_id} · {formatState(session.lifecycle_state)}</p>
+                  </div>
+                  <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
+                    {session.capture_id === selectedCaptureId ? "Current Session" : "Open Session"}
+                  </button>
+                </div>
                 <div className="workspace-item-list">
                   {session.matches.map((match, index) => (
                     <article className="workspace-item" key={`${session.capture_id}-${index}`}>
-                      <strong>{match.field_name}</strong>
-                      <p>{match.snippet}</p>
+                      <div className="badge-row"><span className="status-pill subtle">{formatState(match.item_type)}</span><span className="status-pill subtle">{match.field_name}</span></div>
+                      <p>{highlightSnippet(match.snippet, searchQuery)}</p>
                     </article>
                   ))}
                 </div>
@@ -437,4 +528,35 @@ function formatDate(value: string | null | undefined): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+}
+
+function formatState(value: string | null | undefined): string {
+  if (!value) return "unknown";
+  return value.replace(/_/g, " ");
+}
+
+function compactMetadata(providers: string[], models: string[]): string {
+  const providerText = providers.length ? `Provider: ${providers.slice(0, 2).join(", ")}` : "";
+  const modelText = models.length ? `Model: ${models.slice(0, 2).join(", ")}` : "";
+  return [providerText, modelText].filter(Boolean).join(" · ");
+}
+
+function scopeLabel(scope: SearchScope): string {
+  if (scope === "blockers-risks") return "Blockers / risks";
+  if (scope === "open-questions") return "Open questions";
+  return scope;
+}
+
+function highlightSnippet(snippet: string, query: string) {
+  const term = query.trim();
+  if (!term) return snippet;
+  const index = snippet.toLocaleLowerCase().indexOf(term.toLocaleLowerCase());
+  if (index < 0) return snippet;
+  return (
+    <>
+      {snippet.slice(0, index)}
+      <mark>{snippet.slice(index, index + term.length)}</mark>
+      {snippet.slice(index + term.length)}
+    </>
+  );
 }

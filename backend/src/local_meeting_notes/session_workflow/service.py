@@ -91,37 +91,76 @@ class SessionWorkflowService:
             "active_capture": active_capture if active_capture.get("capture_id") else None,
         }
 
-    def session_library(self) -> dict[str, object]:
+    def session_library(self, *, sort: str = "newest", filter_status: str = "all") -> dict[str, object]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
             rows = [dict(row) for row in fetch_session_library_rows(connection)]
-        return {"sessions": [self._hydrate_library_session(row) for row in rows]}
+        sessions = [self._hydrate_library_session(row) for row in rows]
+        filtered = _filter_library_sessions(sessions, filter_status)
+        sorted_sessions = _sort_library_sessions(filtered, sort)
+        return {
+            "sessions": sorted_sessions,
+            "sort": _normalize_library_sort(sort),
+            "filter": _normalize_library_filter(filter_status),
+            "total_sessions": len(sessions),
+            "visible_sessions": len(sorted_sessions),
+        }
 
-    def search_workspace(self, query: str, limit: int = 120) -> dict[str, object]:
+    def search_workspace(self, query: str, limit: int = 120, scope: str = "all") -> dict[str, object]:
         bootstrap_database(self.config)
+        search_scopes = _search_scopes_for_filter(scope)
         with connection_context(self.config.database_path) as connection:
-            rows = [dict(row) for row in search_capture_content(connection, query=query, limit=limit)]
+            rows = [
+                dict(row)
+                for row in search_capture_content(
+                    connection,
+                    query=query,
+                    scopes=search_scopes,
+                    limit=limit,
+                )
+            ]
         grouped: dict[str, dict[str, object]] = {}
+        seen_matches: set[tuple[str, str, str]] = set()
         for row in rows:
             capture_id = str(row["capture_id"])
+            content = str(row.get("content") or "")
+            normalized_content = _normalize_search_text(content)
+            if not normalized_content:
+                continue
+            dedupe_key = (capture_id, str(row.get("item_type")), normalized_content)
+            if dedupe_key in seen_matches:
+                continue
+            seen_matches.add(dedupe_key)
             group = grouped.setdefault(
                 capture_id,
                 {
                     "capture_id": capture_id,
                     "display_name": row.get("session_display_name") or capture_id,
                     "lifecycle_state": row.get("lifecycle_state"),
+                    "match_count": 0,
                     "matches": [],
                 },
             )
+            matches = group["matches"]
+            if isinstance(matches, list) and len(matches) >= 5:
+                continue
             group["matches"].append(
                 {
                     "item_type": row.get("item_type"),
-                    "field_name": row.get("field_name"),
-                    "snippet": _build_snippet(str(row.get("content") or ""), query),
+                    "field_name": _display_search_field(row.get("field_name"), row.get("item_type")),
+                    "snippet": _build_snippet(content, query),
+                    "rank_weight": row.get("rank_weight"),
                 }
             )
+            group["match_count"] = int(group["match_count"]) + 1
         sessions = list(grouped.values())
-        return {"query": query, "total_matches": len(rows), "sessions": sessions}
+        return {
+            "query": query,
+            "scope": _normalize_search_scope(scope),
+            "total_matches": sum(int(group["match_count"]) for group in sessions),
+            "raw_matches": len(rows),
+            "sessions": sessions,
+        }
 
     def update_action_workflow_state(
         self,
@@ -658,6 +697,96 @@ def _compact_workflow_state(value: object) -> str:
     if state in {"blocked", "risk"}:
         return "open"
     return "open"
+
+
+def _normalize_library_sort(value: str | None) -> str:
+    sort = str(value or "newest").strip().casefold().replace("_", "-")
+    if sort in {"oldest", "oldest-first"}:
+        return "oldest"
+    return "newest"
+
+
+def _normalize_library_filter(value: str | None) -> str:
+    filter_status = str(value or "all").strip().casefold().replace("_", "-")
+    allowed = {"all", "review-ready", "finalised", "exported", "needs-attention"}
+    return filter_status if filter_status in allowed else "all"
+
+
+def _filter_library_sessions(
+    sessions: list[dict[str, object]], filter_status: str
+) -> list[dict[str, object]]:
+    normalized = _normalize_library_filter(filter_status)
+    if normalized == "all":
+        return sessions
+    if normalized == "review-ready":
+        return [
+            session for session in sessions
+            if session.get("lifecycle_state") in {"review_ready", "reviewed"}
+        ]
+    if normalized == "finalised":
+        return [
+            session for session in sessions
+            if session.get("lifecycle_state") in {"final", "exported"}
+        ]
+    if normalized == "exported":
+        return [
+            session for session in sessions
+            if session.get("lifecycle_state") == "exported" or bool(session.get("exported_at"))
+        ]
+    if normalized == "needs-attention":
+        return [
+            session for session in sessions
+            if session.get("lifecycle_state") == "processing_failed" or bool(session.get("last_error"))
+        ]
+    return sessions
+
+
+def _sort_library_sessions(
+    sessions: list[dict[str, object]], sort: str
+) -> list[dict[str, object]]:
+    reverse = _normalize_library_sort(sort) == "newest"
+    return sorted(
+        sessions,
+        key=lambda session: (
+            str(session.get("updated_at") or session.get("created_at") or ""),
+            str(session.get("capture_id") or ""),
+        ),
+        reverse=reverse,
+    )
+
+
+def _normalize_search_scope(value: str | None) -> str:
+    scope = str(value or "all").strip().casefold().replace("_", "-")
+    allowed = {"all", "sessions", "summaries", "actions", "decisions", "blockers-risks", "open-questions"}
+    return scope if scope in allowed else "all"
+
+
+def _search_scopes_for_filter(value: str | None) -> list[str] | None:
+    scope = _normalize_search_scope(value)
+    if scope == "sessions":
+        return ["session"]
+    if scope == "summaries":
+        return ["summary"]
+    if scope == "actions":
+        return ["action", "follow_up"]
+    if scope == "decisions":
+        return ["decision"]
+    if scope == "blockers-risks":
+        return ["blocker_risk"]
+    if scope == "open-questions":
+        return ["open_question"]
+    return None
+
+
+def _normalize_search_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _display_search_field(field_name: object, item_type: object) -> str:
+    field = str(field_name or item_type or "match").replace("_", " ")
+    if field.endswith(" evidence"):
+        field = f"{field[:-9]} evidence"
+    return field
 
 
 def _split_csv_fields(*values: object) -> list[str]:

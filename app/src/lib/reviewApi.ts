@@ -72,6 +72,7 @@ export type SessionLibraryEntry = {
   reviewed_items_exist?: boolean;
   providers: string[];
   models: string[];
+  last_error?: string | null;
 };
 
 export type SessionOverview = SessionLibraryEntry & {
@@ -93,14 +94,20 @@ export type SearchMatch = {
   item_type: string;
   field_name: string;
   snippet: string;
+  rank_weight?: number | null;
 };
 
 export type SearchSessionGroup = {
   capture_id: string;
   display_name: string;
   lifecycle_state?: string | null;
+  match_count?: number;
   matches: SearchMatch[];
 };
+
+export type LibrarySort = "newest" | "oldest";
+export type LibraryFilter = "all" | "review-ready" | "finalised" | "exported" | "needs-attention";
+export type SearchScope = "all" | "sessions" | "summaries" | "actions" | "decisions" | "blockers-risks" | "open-questions";
 
 export type ActionTrackerItem = {
   id: number;
@@ -160,10 +167,10 @@ export async function exportReview(captureId: string, format: "markdown" | "html
   return invoke<string>("export_capture", { captureId, format });
 }
 
-export async function listSessionLibrary(): Promise<SessionLibraryEntry[]> {
+export async function listSessionLibrary(sort: LibrarySort = "newest", filter: LibraryFilter = "all"): Promise<SessionLibraryEntry[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ sessions: SessionLibraryEntry[] }>("session_library");
+  const payload = await invoke<{ sessions: SessionLibraryEntry[] }>("session_library", { sort, filter });
   return payload.sessions || [];
 }
 
@@ -205,10 +212,10 @@ export async function stopRecordingSession(captureId: string): Promise<SessionOv
   return invoke<SessionOverview>("stop_session", { captureId });
 }
 
-export async function searchAcrossSessions(query: string): Promise<{ query: string; total_matches: number; sessions: SearchSessionGroup[] }> {
+export async function searchAcrossSessions(query: string, scope: SearchScope = "all"): Promise<{ query: string; scope?: string; total_matches: number; raw_matches?: number; sessions: SearchSessionGroup[] }> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return { query, total_matches: 0, sessions: [] };
-  return invoke("session_search", { query: query.trim(), limit: 120 });
+  return invoke("session_search", { query: query.trim(), scope, limit: 120 });
 }
 
 export async function finaliseCapture(captureId: string): Promise<void> {
