@@ -14,7 +14,7 @@ It is not production-ready.
 - Summary and outcome extraction.
 - Human review of actions, decisions, follow-ups, blockers/risks, and open questions.
 - Markdown, HTML, and JSON export.
-- Session library with local sort/filter controls, search scopes, global actions, and memory views.
+- Session library with local sort/filter controls, search scopes, global action workflow filters, and memory views.
 - Local LLM provider option with heuristic fallback.
 
 ## Current Product Boundaries
@@ -45,6 +45,14 @@ It is not production-ready.
 - JSON includes more inspection detail for debugging and validation.
 - Evidence snippets and provider/model metadata are preserved where available.
 - Re-extraction after review is blocked or constrained to avoid silently erasing user work.
+
+## Global Action Workflow
+
+- The global action tracker focuses on actionable `action` and `follow_up` items.
+- Workflow states are `open`, `done`, `carried_forward`, and `dismissed`.
+- The default view shows active items: open and carried-forward work.
+- Users can filter by workflow state and sort by recency, oldest first, owner, or source session.
+- Source session, owner, review status, item type, and last-updated time remain visible for traceability.
 
 ## Local LLM Behavior
 

@@ -176,9 +176,20 @@ fn finalise_session(capture_id: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn list_action_tracker_items(limit: Option<i64>) -> Result<serde_json::Value, String> {
+fn list_action_tracker_items(limit: Option<i64>, filter: Option<String>, sort: Option<String>) -> Result<serde_json::Value, String> {
     let limit_arg = limit.unwrap_or(200).clamp(1, 500).to_string();
-    run_backend_json(&["actions", "workspace", "--limit", limit_arg.as_str()])
+    let filter_value = filter.unwrap_or_else(|| "active".to_string());
+    let sort_value = sort.unwrap_or_else(|| "recent".to_string());
+    run_backend_json(&[
+        "actions",
+        "workspace",
+        "--limit",
+        limit_arg.as_str(),
+        "--filter",
+        filter_value.as_str(),
+        "--sort",
+        sort_value.as_str(),
+    ])
 }
 
 #[tauri::command]

@@ -16,6 +16,8 @@ import {
   stopRecordingSession,
   updateActionWorkflow,
   type ActionTrackerItem,
+  type ActionWorkflowFilter,
+  type ActionWorkflowSort,
   type ExtractedOutput,
   type LibraryFilter,
   type LibrarySort,
@@ -29,6 +31,7 @@ import {
 } from "../lib/reviewApi";
 
 type WorkspaceTab = "review" | "library" | "search" | "actions" | "memory";
+type ActionGroupMode = "status" | "session" | "owner";
 
 export function AppShell() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("review");
@@ -47,12 +50,17 @@ export function AppShell() {
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
   const [searchResults, setSearchResults] = useState<{ total_matches: number; raw_matches?: number; sessions: SearchSessionGroup[] }>({ total_matches: 0, sessions: [] });
   const [actionItems, setActionItems] = useState<ActionTrackerItem[]>([]);
+  const [actionFilter, setActionFilter] = useState<ActionWorkflowFilter>("active");
+  const [actionSort, setActionSort] = useState<ActionWorkflowSort>("recent");
+  const [actionGroupMode, setActionGroupMode] = useState<ActionGroupMode>("status");
+  const [isActionsLoading, setIsActionsLoading] = useState(false);
   const [memoryType, setMemoryType] = useState<"decisions" | "blockers_risks" | "open_questions">("decisions");
   const [memoryItems, setMemoryItems] = useState<ActionTrackerItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMessage, setSearchMessage] = useState("Run a search across sessions.");
   const [isUpdatingWorkflowId, setIsUpdatingWorkflowId] = useState<string | null>(null);
   const [recordingSession, setRecordingSession] = useState<SessionOverview | null>(null);
+  const [newRecordingTitle, setNewRecordingTitle] = useState("");
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
 
   useEffect(() => {
@@ -66,6 +74,10 @@ export function AppShell() {
   useEffect(() => {
     void refreshLibrary();
   }, [librarySort, libraryFilter]);
+
+  useEffect(() => {
+    void refreshActions();
+  }, [actionFilter, actionSort]);
 
   async function refreshAll() {
     await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions()]);
@@ -85,7 +97,12 @@ export function AppShell() {
   }
 
   async function refreshActions() {
-    setActionItems(await listGlobalActions());
+    setIsActionsLoading(true);
+    try {
+      setActionItems(await listGlobalActions(actionFilter, actionSort));
+    } finally {
+      setIsActionsLoading(false);
+    }
   }
 
   async function refreshMemory() {
@@ -174,13 +191,14 @@ export function AppShell() {
     setIsRecordingBusy(true);
     setStatus("Creating and starting microphone recording...");
     try {
-      const created = await createRecordingSession();
+      const created = await createRecordingSession(newRecordingTitle);
       setRecordingSession({ ...created, lifecycle_state: "starting" });
       const started = await startRecordingSession(created.capture_id);
       setRecordingSession(started);
       setSelectedCaptureId(started.capture_id);
       setCaptureId(started.capture_id);
       setPayload(null);
+      setNewRecordingTitle("");
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshLibrary();
     } catch (error) {
@@ -248,6 +266,16 @@ export function AppShell() {
     if (!count) return libraryFilter === "all" ? "No saved sessions yet." : "No sessions match this filter.";
     return `${count} ${count === 1 ? "session" : "sessions"} shown · ${librarySort === "newest" ? "newest first" : "oldest first"}`;
   }, [isLibraryLoading, library.length, libraryFilter, librarySort]);
+  const groupedActions = useMemo(
+    () => groupActionItems(actionItems, actionGroupMode),
+    [actionItems, actionGroupMode],
+  );
+  const actionSummary = useMemo(() => {
+    if (isActionsLoading) return "Loading action workspace...";
+    const count = actionItems.length;
+    const filterText = actionFilter === "carried-forward" ? "carried forward" : actionFilter;
+    return count ? `${count} ${count === 1 ? "item" : "items"} shown · ${filterText} · sorted by ${actionSort}` : "No action items match this view.";
+  }, [actionFilter, actionItems.length, actionSort, isActionsLoading]);
 
   return (
     <main className="app-shell">
@@ -255,6 +283,16 @@ export function AppShell() {
         <p className="eyebrow">Local Meeting Memory Workspace</p>
         <h1>Session Library + Search</h1>
         <p className="hero-copy">Browse every session, search outcomes across meeting history, and track carry-forward actions locally.</p>
+        <div className="capture-toolbar recording-name-row">
+          <input
+            aria-label="Meeting or call name"
+            placeholder="Meeting or call name"
+            value={newRecordingTitle}
+            onChange={(event) => setNewRecordingTitle(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void handleNewRecording(); }}
+            disabled={isRecordingBusy}
+          />
+        </div>
         <div className="segmented-control">
           <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>New Recording</button>
           {(["review", "library", "search", "actions", "memory"] as WorkspaceTab[]).map((tab) => (
@@ -439,24 +477,99 @@ export function AppShell() {
 
       {activeTab === "actions" && (
         <section className="panel workspace-panel">
-          <div className="panel-heading compact"><h2>Global Action Tracker</h2><button className="secondary-button" onClick={() => void refreshActions()}>Refresh</button></div>
-          <div className="workspace-item-list">
-            {actionItems.map((item) => (
-              <article className="workspace-item" key={`${item.item_type}-${item.id}`}>
-                <strong>{item.effective_description}</strong>
-                <p>{item.source_display_name} · {item.capture_id} · {item.effective_owner_name || "Unknown"}</p>
-                <div className="badge-row"><span className={`status-pill action-${item.workflow_state}`}>{item.workflow_state}</span><span className={`status-pill review-${item.review_status}`}>{item.review_status}</span></div>
-                {(item.item_type === "action" || item.item_type === "follow_up") && (
-                  <div className="review-actions">
-                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "open")}>Open</button>
-                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "done")}>Done</button>
-                    <button className="secondary-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "carried_forward")}>Carry Forward</button>
-                    <button className="danger-button" disabled={isUpdatingWorkflowId === `${item.item_type}-${item.id}`} onClick={() => void handleWorkflow(item, "dismissed")}>Dismiss</button>
-                  </div>
-                )}
-              </article>
-            ))}
+          <div className="panel-heading compact">
+            <div>
+              <h2>Global Action Tracker</h2>
+              <p className="muted">{actionSummary}</p>
+            </div>
+            <button className="secondary-button" onClick={() => void refreshActions()} disabled={isActionsLoading}>{isActionsLoading ? "Refreshing..." : "Refresh"}</button>
           </div>
+          <div className="workspace-controls">
+            <label>
+              <span>Filter</span>
+              <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value as ActionWorkflowFilter)}>
+                <option value="active">Active</option>
+                <option value="all">All states</option>
+                <option value="open">Open only</option>
+                <option value="done">Done</option>
+                <option value="carried-forward">Carried forward</option>
+                <option value="dismissed">Dismissed</option>
+              </select>
+            </label>
+            <label>
+              <span>Sort</span>
+              <select value={actionSort} onChange={(event) => setActionSort(event.target.value as ActionWorkflowSort)}>
+                <option value="recent">Most recent</option>
+                <option value="oldest">Oldest first</option>
+                <option value="owner">Owner</option>
+                <option value="session">Source session</option>
+              </select>
+            </label>
+            <label>
+              <span>Group</span>
+              <select value={actionGroupMode} onChange={(event) => setActionGroupMode(event.target.value as ActionGroupMode)}>
+                <option value="status">Workflow state</option>
+                <option value="session">Source session</option>
+                <option value="owner">Owner</option>
+              </select>
+            </label>
+          </div>
+          {isActionsLoading && !actionItems.length ? (
+            <div className="empty-state">Loading local action items...</div>
+          ) : !actionItems.length ? (
+            <div className="empty-state">No action items match the current filter.</div>
+          ) : (
+            <div className="workspace-group-list">
+              {groupedActions.map((group) => (
+                <section className="action-group" key={group.label}>
+                  <div className="workspace-group-heading action-group-heading">
+                    <div>
+                      <h3>{group.label}</h3>
+                      <p>{group.items.length} {group.items.length === 1 ? "item" : "items"}</p>
+                    </div>
+                  </div>
+                  <div className="workspace-item-list">
+                    {group.items.map((item) => {
+                      const key = `${item.item_type}-${item.id}`;
+                      const isUpdating = isUpdatingWorkflowId === key;
+                      return (
+                        <article className="workspace-item action-item" key={key}>
+                          <div className="action-item-main">
+                            <div>
+                              <strong>{item.effective_description}</strong>
+                              <p>{item.source_display_name} · {item.capture_id} · Owner: {item.effective_owner_name || "Unknown"}</p>
+                            </div>
+                            <button className="secondary-button" onClick={() => void loadCapture(item.capture_id)}>Open Session</button>
+                          </div>
+                          <div className="badge-row">
+                            <span className={`status-pill action-${item.workflow_state}`}>{formatWorkflowState(item.workflow_state)}</span>
+                            <span className={`status-pill review-${item.review_status}`}>{item.review_status}</span>
+                            <span className="status-pill subtle">{item.item_type.replace(/_/g, " ")}</span>
+                            <span className="status-pill subtle">Updated {formatDate(item.last_updated_at || item.reviewed_at)}</span>
+                          </div>
+                          <div className="workflow-control">
+                            <label>
+                              <span>Workflow state</span>
+                              <select
+                                value={item.workflow_state}
+                                disabled={isUpdating}
+                                onChange={(event) => void handleWorkflow(item, event.target.value as ActionTrackerItem["workflow_state"])}
+                              >
+                                <option value="open">Open</option>
+                                <option value="done">Done</option>
+                                <option value="carried_forward">Carried forward</option>
+                                <option value="dismissed">Dismissed</option>
+                              </select>
+                            </label>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -539,6 +652,25 @@ function compactMetadata(providers: string[], models: string[]): string {
   const providerText = providers.length ? `Provider: ${providers.slice(0, 2).join(", ")}` : "";
   const modelText = models.length ? `Model: ${models.slice(0, 2).join(", ")}` : "";
   return [providerText, modelText].filter(Boolean).join(" · ");
+}
+
+function formatWorkflowState(value: ActionTrackerItem["workflow_state"]): string {
+  return value.replace(/_/g, " ");
+}
+
+function groupActionItems(items: ActionTrackerItem[], mode: ActionGroupMode) {
+  const groups = new Map<string, ActionTrackerItem[]>();
+  for (const item of items) {
+    const label = actionGroupLabel(item, mode);
+    groups.set(label, [...(groups.get(label) || []), item]);
+  }
+  return Array.from(groups.entries()).map(([label, groupItems]) => ({ label, items: groupItems }));
+}
+
+function actionGroupLabel(item: ActionTrackerItem, mode: ActionGroupMode): string {
+  if (mode === "session") return item.source_display_name || item.capture_id;
+  if (mode === "owner") return item.effective_owner_name || "Unknown owner";
+  return formatWorkflowState(item.workflow_state);
 }
 
 function scopeLabel(scope: SearchScope): string {

@@ -91,6 +91,31 @@ class SessionWorkflowService:
             "active_capture": active_capture if active_capture.get("capture_id") else None,
         }
 
+    def action_workspace(
+        self,
+        *,
+        limit: int = 200,
+        workflow_filter: str = "active",
+        sort: str = "recent",
+    ) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            rows = [dict(row) for row in fetch_cross_session_action_items(connection, limit=max(limit, 500))]
+        items = [
+            item for item in (_hydrate_workspace_item(row) for row in rows)
+            if item["item_type"] in {"action", "follow_up"}
+        ]
+        filtered = _filter_action_workspace_items(items, workflow_filter)
+        sorted_items = _sort_action_workspace_items(filtered, sort)
+        safe_limit = max(1, min(int(limit), 500))
+        return {
+            "items": sorted_items[:safe_limit],
+            "filter": _normalize_action_filter(workflow_filter),
+            "sort": _normalize_action_sort(sort),
+            "total_items": len(items),
+            "visible_items": min(len(sorted_items), safe_limit),
+        }
+
     def session_library(self, *, sort: str = "newest", filter_status: str = "all") -> dict[str, object]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
@@ -663,6 +688,11 @@ def _accumulated_recorded_seconds(row: dict[str, object], now: datetime) -> int:
 def _hydrate_workspace_item(row: dict[str, object]) -> dict[str, object]:
     reviewed_description = _clean_text(row.get("reviewed_description"))
     reviewed_owner_name = _clean_text(row.get("reviewed_owner_name"))
+    last_updated_at = (
+        row.get("reviewed_at")
+        or row.get("generated_at")
+        or row.get("source_updated_at")
+    )
     return {
         "id": row["id"],
         "item_type": row["item_type"],
@@ -677,6 +707,7 @@ def _hydrate_workspace_item(row: dict[str, object]) -> dict[str, object]:
         "workflow_state": _compact_workflow_state(row.get("workflow_state")),
         "review_status": row.get("review_status") or "generated",
         "reviewed_at": row.get("reviewed_at"),
+        "last_updated_at": last_updated_at,
         "evidence_snippet": row.get("evidence_snippet"),
         "start_offset_seconds": row.get("start_offset_seconds"),
         "end_offset_seconds": row.get("end_offset_seconds"),
@@ -697,6 +728,86 @@ def _compact_workflow_state(value: object) -> str:
     if state in {"blocked", "risk"}:
         return "open"
     return "open"
+
+
+def _normalize_action_filter(value: str | None) -> str:
+    filter_value = str(value or "active").strip().casefold().replace("_", "-")
+    aliases = {
+        "all": "all",
+        "active": "active",
+        "open": "open",
+        "open-only": "open",
+        "done": "done",
+        "complete": "done",
+        "completed": "done",
+        "carried": "carried-forward",
+        "carry-forward": "carried-forward",
+        "carried-forward": "carried-forward",
+        "dismissed": "dismissed",
+    }
+    return aliases.get(filter_value, "active")
+
+
+def _filter_action_workspace_items(
+    items: list[dict[str, object]], workflow_filter: str
+) -> list[dict[str, object]]:
+    normalized = _normalize_action_filter(workflow_filter)
+    if normalized == "all":
+        return items
+    if normalized == "active":
+        return [item for item in items if item.get("workflow_state") in {"open", "carried_forward"}]
+    if normalized == "carried-forward":
+        return [item for item in items if item.get("workflow_state") == "carried_forward"]
+    return [item for item in items if item.get("workflow_state") == normalized]
+
+
+def _normalize_action_sort(value: str | None) -> str:
+    sort = str(value or "recent").strip().casefold().replace("_", "-")
+    if sort in {"oldest", "owner", "session"}:
+        return sort
+    return "recent"
+
+
+def _sort_action_workspace_items(
+    items: list[dict[str, object]], sort: str
+) -> list[dict[str, object]]:
+    normalized = _normalize_action_sort(sort)
+    if normalized == "oldest":
+        return sorted(
+            items,
+            key=lambda item: (
+                str(item.get("last_updated_at") or ""),
+                str(item.get("capture_id") or ""),
+                int(item.get("id") or 0),
+            ),
+        )
+    if normalized == "owner":
+        return sorted(
+            items,
+            key=lambda item: (
+                str(item.get("effective_owner_name") or "Unknown").casefold(),
+                str(item.get("last_updated_at") or ""),
+                int(item.get("id") or 0),
+            ),
+        )
+    if normalized == "session":
+        return sorted(
+            items,
+            key=lambda item: (
+                str(item.get("source_display_name") or item.get("capture_id") or "").casefold(),
+                str(item.get("last_updated_at") or ""),
+                int(item.get("id") or 0),
+            ),
+        )
+    return sorted(
+        items,
+        key=lambda item: (
+            str(item.get("last_updated_at") or ""),
+            str(item.get("capture_id") or ""),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    )
 
 
 def _normalize_library_sort(value: str | None) -> str:

@@ -375,6 +375,14 @@ textarea {
   gap: 10px;
 }
 
+.recording-name-row {
+  margin-top: 2px;
+}
+
+.recording-name-row input {
+  min-width: min(520px, 100%);
+}
+
 .note-card {
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 18px;
@@ -608,6 +616,55 @@ textarea {
 .workspace-item {
   border-left: 3px solid rgba(25, 50, 79, 0.18);
   padding-left: 12px;
+}
+
+.action-group {
+  border-top: 1px solid rgba(23, 32, 51, 0.08);
+  padding-top: 12px;
+}
+
+.action-group:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.action-group-heading {
+  margin-bottom: 8px;
+}
+
+.action-item {
+  background: #fff;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-left: 4px solid rgba(25, 50, 79, 0.18);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.action-item-main {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.workflow-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.workflow-control label {
+  color: #435066;
+  display: grid;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.workflow-control select {
+  min-width: 180px;
 }
 
 .workspace-item p {

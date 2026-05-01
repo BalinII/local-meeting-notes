@@ -129,12 +129,16 @@ python -m local_meeting_notes.app session library --sort oldest --filter review-
 python -m local_meeting_notes.app session search --query "decision"
 python -m local_meeting_notes.app session search --query "decision" --scope decisions
 python -m local_meeting_notes.app actions workspace --limit 200
+python -m local_meeting_notes.app actions workspace --filter active --sort recent
+python -m local_meeting_notes.app actions workspace --filter carried-forward --sort owner
 python -m local_meeting_notes.app memory list --item-type decisions
 ```
 
 The Session Library is a local session browser. It shows the display name first, capture id second, then lifecycle, review/final/export status, timestamps, and compact provider/model metadata when available. The desktop library supports `newest` and `oldest` sorting plus simple filters for all sessions, review-ready sessions, finalised sessions, exported sessions, and sessions needing attention.
 
 Search is also local and SQLite-backed. Results are grouped by session, prefer reviewed/effective extracted content where it exists, hide rejected extracted items, reduce duplicate evidence/content matches, and cap noisy repeats per session. Search scopes are intentionally lightweight: all, sessions, summaries, actions, decisions, blockers/risks, and open questions.
+
+The Global Action Tracker is for follow-through across sessions. It shows actionable `action` and `follow_up` items, keeps source session and owner visible, supports workflow states `open`, `done`, `carried_forward`, and `dismissed`, and can filter active/all/open/done/carried-forward/dismissed items. Sorting is available by most recent, oldest, owner, or source session. Workflow changes are persisted locally in SQLite and survive app restart.
 
 ## Optional Local LLM Setup
 

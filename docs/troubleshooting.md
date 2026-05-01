@@ -197,6 +197,32 @@ Interpretation:
 - JSON is the best inspection format for generated/reviewed/effective fields.
 - Re-extraction after review is blocked to avoid erasing accepted/edited/rejected work.
 
+## Global Action Workflow Issues
+
+Symptoms:
+
+- An action is missing from the default tracker view.
+- A workflow state change appears to revert.
+- The action tracker feels sorted differently than expected.
+
+Current behavior:
+
+- The default tracker filter is `active`, which includes `open` and `carried_forward`.
+- `done` and `dismissed` items are still local and persisted, but only appear when their filter or `all` is selected.
+- The tracker shows `action` and standard `follow_up` items. Decisions, blockers/risks, and open questions remain available in memory views.
+- Workflow updates write to SQLite immediately and update the item's last-updated timestamp.
+
+Manual checks:
+
+```powershell
+python -m local_meeting_notes.app actions workspace --filter active --sort recent
+python -m local_meeting_notes.app actions workspace --filter all --sort owner
+python -m local_meeting_notes.app actions workspace --filter done --sort recent
+python -m local_meeting_notes.app actions update-workflow --item-type action --item-id 1 --workflow-status carried_forward
+```
+
+If a changed item is not visible, switch the filter to `all` and confirm whether its state is `done` or `dismissed`.
+
 ## Tauri, Node, And Rust Issues
 
 Symptoms:

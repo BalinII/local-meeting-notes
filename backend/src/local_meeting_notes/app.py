@@ -180,6 +180,16 @@ def build_parser() -> argparse.ArgumentParser:
     actions_list.add_argument("--capture-id", required=True)
     actions_workspace = actions_subparsers.add_parser("workspace", help="List global action tracker items.")
     actions_workspace.add_argument("--limit", type=int, default=200)
+    actions_workspace.add_argument(
+        "--filter",
+        choices=("active", "all", "open", "done", "carried-forward", "dismissed"),
+        default="active",
+    )
+    actions_workspace.add_argument(
+        "--sort",
+        choices=("recent", "oldest", "owner", "session"),
+        default="recent",
+    )
     actions_update = actions_subparsers.add_parser("update-workflow", help="Update action/follow-up workflow state.")
     actions_update.add_argument("--item-type", choices=("action", "follow_up"), required=True)
     actions_update.add_argument("--item-id", type=int, required=True)
@@ -847,10 +857,14 @@ def run_session_cleanup() -> int:
     return 0
 
 
-def run_actions_workspace(limit: int) -> int:
+def run_actions_workspace(limit: int, workflow_filter: str = "active", sort: str = "recent") -> int:
     service = _get_session_workflow_service()
-    payload = service.dashboard_payload()
-    print(json.dumps({"items": payload["action_items"][: max(1, limit)]}, ensure_ascii=False))
+    print(
+        json.dumps(
+            service.action_workspace(limit=limit, workflow_filter=workflow_filter, sort=sort),
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
@@ -961,7 +975,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "actions" and args.actions_command == "list":
         return run_actions_list(args.capture_id)
     if args.command == "actions" and args.actions_command == "workspace":
-        return run_actions_workspace(args.limit)
+        return run_actions_workspace(args.limit, args.filter, args.sort)
     if args.command == "actions" and args.actions_command == "update-workflow":
         return run_actions_update_workflow(args.item_type, args.item_id, args.workflow_status)
     if args.command == "memory" and args.memory_command == "list":

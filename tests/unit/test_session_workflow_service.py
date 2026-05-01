@@ -633,3 +633,90 @@ def test_action_workflow_updates_persist_all_supported_states(local_tmp_dir) -> 
     reopened_states = {(item["item_type"], item["id"]): item["workflow_state"] for item in reopened_items}
     assert reopened_states[("action", action_id)] == "carried_forward"
     assert reopened_states[("follow_up", follow_up_id)] == "carried_forward"
+
+
+def test_action_workspace_filters_sorts_and_exposes_last_updated(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    first = service.create_session("Alpha Session")
+    second = service.create_session("Beta Session")
+    with connection_context(config.database_path) as connection:
+        open_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(first["id"]),
+                capture_id=str(first["capture_id"]),
+                description="Open action for owner sorting.",
+                owner_name="Zara",
+                status="open",
+                generated_at="2026-04-20T00:00:00+00:00",
+            ),
+        )
+        done_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(second["id"]),
+                capture_id=str(second["capture_id"]),
+                description="Done action should filter separately.",
+                owner_name="Alex",
+                status="done",
+                generated_at="2026-04-21T00:00:00+00:00",
+            ),
+        )
+        carried_follow_up_id = insert_follow_up(
+            connection,
+            FollowUpRecord(
+                id=None,
+                meeting_id=int(second["id"]),
+                capture_id=str(second["capture_id"]),
+                description="Carried follow-up remains active.",
+                follow_up_type="follow_up",
+                owner_name="Morgan",
+                status="carried_forward",
+                generated_at="2026-04-22T00:00:00+00:00",
+            ),
+        )
+        insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=int(first["id"]),
+                capture_id=str(first["capture_id"]),
+                description="Decision should not appear in the action workspace.",
+                generated_at="2026-04-23T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            "UPDATE actions SET reviewed_at = '2026-04-24T00:00:00+00:00' WHERE id = ?",
+            (done_action_id,),
+        )
+        connection.commit()
+
+    active = service.action_workspace(workflow_filter="active", sort="recent")
+    done = service.action_workspace(workflow_filter="done")
+    owner_sorted = service.action_workspace(workflow_filter="all", sort="owner")
+    session_sorted = service.action_workspace(workflow_filter="all", sort="session")
+
+    assert {(item["item_type"], item["id"]) for item in active["items"]} == {
+        ("action", open_action_id),
+        ("follow_up", carried_follow_up_id),
+    }
+    assert [(item["item_type"], item["id"]) for item in done["items"]] == [("action", done_action_id)]
+    assert [item["effective_owner_name"] for item in owner_sorted["items"]] == ["Alex", "Morgan", "Zara"]
+    assert [item["source_display_name"] for item in session_sorted["items"]] == [
+        "Alpha Session",
+        "Beta Session",
+        "Beta Session",
+    ]
+    assert done["items"][0]["last_updated_at"] == "2026-04-24T00:00:00+00:00"

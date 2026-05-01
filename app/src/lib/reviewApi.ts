@@ -108,6 +108,8 @@ export type SearchSessionGroup = {
 export type LibrarySort = "newest" | "oldest";
 export type LibraryFilter = "all" | "review-ready" | "finalised" | "exported" | "needs-attention";
 export type SearchScope = "all" | "sessions" | "summaries" | "actions" | "decisions" | "blockers-risks" | "open-questions";
+export type ActionWorkflowFilter = "active" | "all" | "open" | "done" | "carried-forward" | "dismissed";
+export type ActionWorkflowSort = "recent" | "oldest" | "owner" | "session";
 
 export type ActionTrackerItem = {
   id: number;
@@ -119,6 +121,7 @@ export type ActionTrackerItem = {
   review_status: string;
   workflow_state: "open" | "done" | "dismissed" | "carried_forward";
   reviewed_at?: string | null;
+  last_updated_at?: string | null;
 };
 
 type TauriGlobal = {
@@ -174,10 +177,10 @@ export async function listSessionLibrary(sort: LibrarySort = "newest", filter: L
   return payload.sessions || [];
 }
 
-export async function createRecordingSession(): Promise<SessionOverview> {
+export async function createRecordingSession(title?: string | null): Promise<SessionOverview> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("New Recording is available in Tauri desktop mode.");
-  return invoke<SessionOverview>("create_session", { title: null });
+  return invoke<SessionOverview>("create_session", { title: title?.trim() || null });
 }
 
 export async function startRecordingSession(captureId: string): Promise<SessionOverview> {
@@ -224,10 +227,10 @@ export async function finaliseCapture(captureId: string): Promise<void> {
   await invoke("finalise_session", { captureId });
 }
 
-export async function listGlobalActions(): Promise<ActionTrackerItem[]> {
+export async function listGlobalActions(filter: ActionWorkflowFilter = "active", sort: ActionWorkflowSort = "recent"): Promise<ActionTrackerItem[]> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return [];
-  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200 });
+  const payload = await invoke<{ items: ActionTrackerItem[] }>("list_action_tracker_items", { limit: 200, filter, sort });
   return payload.items || [];
 }
 
