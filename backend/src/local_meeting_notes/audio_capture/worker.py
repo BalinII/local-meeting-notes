@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import UTC, datetime
+from math import sqrt
 from pathlib import Path
 from traceback import format_exc
 
@@ -90,6 +91,56 @@ def _record_source(
     read_window_seconds = 0.5
     read_frames = max(1, int(sample_rate * read_window_seconds))
     buffered_frames = None
+    silent_rms_threshold = 0.003
+    stale_chunk_multiplier = 1.5
+    health_update_interval = 1.0
+    silent_warning_seconds = max(5.0, chunk_seconds)
+    last_health_update = 0.0
+    last_metrics_write = 0.0
+    first_frame_monotonic: float | None = None
+    last_frame_monotonic: float | None = None
+    last_chunk_monotonic: float | None = None
+
+    def update_health(*, force: bool = False, warning: str | None = None) -> None:
+        nonlocal last_health_update
+        now = time.time()
+        if not force and (now - last_health_update) < health_update_interval:
+            return
+        with state_lock:
+            state = read_capture_state(state_path)
+            if state is None:
+                return
+            health = dict(state.get("health") or {})
+            sources = dict(health.get("sources") or {})
+            source_health = dict(sources.get(source_name) or {})
+            is_silent = bool(source_health.get("is_silent", True))
+            if warning is None and source_health.get("warning"):
+                warning = str(source_health["warning"])
+
+            if first_frame_monotonic is not None and last_frame_monotonic is not None:
+                if (last_frame_monotonic - first_frame_monotonic) >= silent_warning_seconds and is_silent:
+                    warning = f"No meaningful {source_name} audio detected recently"
+            if last_frame_monotonic is None and source_health.get("stream_open"):
+                warning = f"{source_name.capitalize()} stream opened but no frames received"
+            if (
+                last_chunk_monotonic is not None
+                and last_frame_monotonic is not None
+                and (last_frame_monotonic - last_chunk_monotonic) > (chunk_seconds * stale_chunk_multiplier)
+            ):
+                warning = f"{source_name.capitalize()} chunk write is lagging behind incoming frames"
+
+            source_health.update(
+                {
+                    "enabled": bool(state.get(f"include_{source_name}")),
+                    "warning": warning,
+                }
+            )
+            sources[source_name] = source_health
+            health["sources"] = sources
+            health["updated_at"] = _utc_timestamp()
+            state["health"] = health
+            write_capture_state(state_path, state)
+        last_health_update = now
 
     logger.info(
         "Opening %s stream with samplerate=%s channels=%s chunk_seconds=%s",
@@ -107,18 +158,65 @@ def _record_source(
 
     with recorder_factory(samplerate=sample_rate, channels=channels) as recorder:
         logger.info("%s stream opened successfully", source_name)
+        with state_lock:
+            state = read_capture_state(state_path)
+            if state is not None:
+                health = dict(state.get("health") or {})
+                sources = dict(health.get("sources") or {})
+                source_health = dict(sources.get(source_name) or {})
+                source_health["stream_open"] = True
+                source_health["warning"] = None
+                sources[source_name] = source_health
+                health["sources"] = sources
+                health["updated_at"] = _utc_timestamp()
+                state["health"] = health
+                write_capture_state(state_path, state)
         while True:
             if stop_path.exists():
                 break
 
             frames = recorder.record(numframes=read_frames)
             frames = _normalise_channels(frames, channels)
+            abs_frames = np.abs(np.asarray(frames, dtype=np.float32))
+            peak = float(abs_frames.max()) if len(abs_frames) else 0.0
+            rms = float(sqrt(float(np.mean(np.square(abs_frames))))) if len(abs_frames) else 0.0
+            is_silent = rms < silent_rms_threshold
+            last_frame_monotonic = time.monotonic()
+            if first_frame_monotonic is None:
+                first_frame_monotonic = last_frame_monotonic
             if buffered_frames is None:
                 logger.info("%s first frame read succeeded", source_name)
                 startup_event.set()
                 buffered_frames = frames
             else:
                 buffered_frames = np.concatenate((buffered_frames, frames), axis=0)
+
+            now_monotonic = time.monotonic()
+            if (now_monotonic - last_metrics_write) >= health_update_interval:
+                with state_lock:
+                    state = read_capture_state(state_path)
+                    if state is not None:
+                        health = dict(state.get("health") or {})
+                        sources = dict(health.get("sources") or {})
+                        source_health = dict(sources.get(source_name) or {})
+                        source_health.update(
+                            {
+                                "enabled": bool(state.get(f"include_{source_name}")),
+                                "stream_open": True,
+                                "last_frame_at": _utc_timestamp(),
+                                "recent_rms": round(rms, 6),
+                                "recent_peak": round(peak, 6),
+                                "is_silent": is_silent,
+                                "warning": None,
+                            }
+                        )
+                        sources[source_name] = source_health
+                        health["sources"] = sources
+                        health["updated_at"] = _utc_timestamp()
+                        state["health"] = health
+                        write_capture_state(state_path, state)
+                last_metrics_write = now_monotonic
+            update_health()
 
             while len(buffered_frames) >= chunk_frames:
                 chunk_payload = buffered_frames[:chunk_frames]
@@ -130,12 +228,26 @@ def _record_source(
                     state_lock=state_lock,
                 )
                 soundfile_module.write(str(chunk_path), chunk_payload, sample_rate)
+                last_chunk_monotonic = time.monotonic()
                 logger.info("Wrote %s chunk to %s", source_name, chunk_path)
                 _append_chunk_state(
                     state_path=state_path,
                     chunk_path=chunk_path,
                     state_lock=state_lock,
                 )
+                with state_lock:
+                    state = read_capture_state(state_path)
+                    if state is not None:
+                        health = dict(state.get("health") or {})
+                        sources = dict(health.get("sources") or {})
+                        source_health = dict(sources.get(source_name) or {})
+                        source_health["last_chunk_at"] = _utc_timestamp()
+                        sources[source_name] = source_health
+                        health["sources"] = sources
+                        health["updated_at"] = _utc_timestamp()
+                        state["health"] = health
+                        write_capture_state(state_path, state)
+                update_health(force=True)
 
         if buffered_frames is not None and len(buffered_frames) > 0:
             logger.info(
@@ -150,12 +262,14 @@ def _record_source(
                 state_lock=state_lock,
             )
             soundfile_module.write(str(chunk_path), buffered_frames, sample_rate)
+            last_chunk_monotonic = time.monotonic()
             logger.info("Wrote %s chunk to %s", source_name, chunk_path)
             _append_chunk_state(
                 state_path=state_path,
                 chunk_path=chunk_path,
                 state_lock=state_lock,
             )
+            update_health(force=True)
 
 
 def run_capture_worker(config: AppConfig, state_path: Path) -> int:
@@ -264,6 +378,38 @@ def run_capture_worker(config: AppConfig, state_path: Path) -> int:
         return 1
 
     state["status"] = "starting"
+    state["health"] = {
+        "updated_at": _utc_timestamp(),
+        "sources": {
+            "microphone": {
+                "enabled": bool(state.get("include_microphone")),
+                "stream_open": False,
+                "last_frame_at": None,
+                "last_chunk_at": None,
+                "recent_rms": 0.0,
+                "recent_peak": 0.0,
+                "is_silent": True,
+                "warning": None,
+            },
+            "loopback": {
+                "enabled": bool(state.get("include_loopback")),
+                "stream_open": False,
+                "last_frame_at": None,
+                "last_chunk_at": None,
+                "recent_rms": 0.0,
+                "recent_peak": 0.0,
+                "is_silent": True,
+                "warning": None,
+            },
+        },
+        "sample_rate": sample_rate,
+        "channels": channels,
+        "chunk_seconds": chunk_seconds,
+        "read_window_seconds": 0.5,
+        "output_dir": state.get("output_dir"),
+        "capture_id": state.get("capture_id"),
+        "pid": state.get("pid"),
+    }
     state["pid"] = state.get("pid")
     write_capture_state(state_path, state)
     logger.info(
