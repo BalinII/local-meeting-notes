@@ -181,6 +181,7 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     assert "# Capture Export" in markdown
     assert "## Executive Summary" in markdown
     assert "## Actions" in markdown
+    assert "- Export mode: final_notes" in markdown
     assert markdown.count("## Detailed Summary") == 1
     assert "Evidence snippets" in markdown
     assert "<h1>Capture Export</h1>" in html
@@ -189,6 +190,7 @@ def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     assert "<nav>" in html
     assert "Blockers / Risks" in html
     assert payload["metadata"]["action_count"] == 1
+    assert payload["metadata"]["export_mode"] == "full_detail"
 
 
 def test_reviewed_items_are_persisted_and_used_for_exports(local_tmp_dir) -> None:
@@ -226,6 +228,24 @@ def test_reviewed_items_are_persisted_and_used_for_exports(local_tmp_dir) -> Non
     assert "Share reviewed Markdown and HTML exports." in html
     assert "Review status: edited" in html
     assert "Keep the review workflow local-first." not in html
+
+
+def test_final_notes_prefers_reviewed_items_but_full_detail_keeps_generated(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    _seed_outputs(config)
+    service = ExportService(config)
+    payload = service.build_review_payload("capture-export")
+    action_id = payload["actions"][0]["id"]
+    service.review_item(
+        item_type="action",
+        item_id=action_id,
+        review_status="accepted",
+    )
+
+    markdown = service.render_export("capture-export", "markdown")
+    json_payload = json.loads(service.render_export("capture-export", "json"))
+    assert "Review status: accepted" in markdown
+    assert json_payload["metadata"]["export_mode"] == "full_detail"
 
 
 def test_export_service_writes_files(local_tmp_dir) -> None:

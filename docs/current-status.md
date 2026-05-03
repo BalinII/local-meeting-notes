@@ -13,7 +13,7 @@ It is not production-ready.
 - Local transcription and generic diarization.
 - Summary and outcome extraction.
 - Human review of actions, decisions, follow-ups, blockers/risks, and open questions.
-- Markdown, HTML, and JSON export.
+- Markdown, HTML, and JSON export with final-notes defaults for Markdown/HTML and full-detail JSON for audit payloads.
 - Session library with local sort/filter controls, search scopes, global action workflow filters, and memory views.
 - Local LLM provider option with heuristic fallback.
 
@@ -42,7 +42,7 @@ It is not production-ready.
 ## Review And Export Behavior
 
 - Generated and reviewed values are stored separately where review applies.
-- Accepted and edited items are preferred in exports.
+- Accepted and edited items are preferred in final-notes exports; generated items remain available in full-detail JSON/audit views.
 - Rejected extracted items are omitted from Markdown and HTML.
 - JSON includes more inspection detail for debugging and validation.
 - Evidence snippets and provider/model metadata are preserved where available.

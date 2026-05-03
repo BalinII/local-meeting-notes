@@ -386,9 +386,9 @@ export function AppShell() {
                 <h2>{payload.metadata.display_name || payload.capture_id}</h2>
                 <p>{payload.capture_id}</p>
                 <div className="export-actions">
-                  <button onClick={() => void handleExport("markdown")}>Export Markdown</button>
-                  <button onClick={() => void handleExport("html")}>Export HTML</button>
-                  <button onClick={() => void handleExport("json")}>Export JSON</button>
+                  <button onClick={() => void handleExport("markdown")}>Export Final Notes (Markdown)</button>
+                  <button onClick={() => void handleExport("html")}>Export Final Notes (HTML)</button>
+                  <button onClick={() => void handleExport("json")}>Export Full Detail (JSON)</button>
                   <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
                 </div>
               </aside>
