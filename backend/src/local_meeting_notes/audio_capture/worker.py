@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from traceback import format_exc
 
+import numpy as np
+
 from ..config import AppConfig
 from ..logging_config import configure_logging
 from .dependencies import AudioDependencyError, load_audio_dependencies
@@ -85,7 +87,9 @@ def _record_source(
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     chunk_frames = sample_rate * chunk_seconds
-    probe_frames = min(sample_rate, chunk_frames)
+    read_window_seconds = 0.5
+    read_frames = max(1, int(sample_rate * read_window_seconds))
+    buffered_frames = None
 
     logger.info(
         "Opening %s stream with samplerate=%s channels=%s chunk_seconds=%s",
@@ -94,37 +98,58 @@ def _record_source(
         channels,
         chunk_seconds,
     )
+    logger.info(
+        "%s using read window %.2fs (%s frames)",
+        source_name,
+        read_window_seconds,
+        read_frames,
+    )
 
     with recorder_factory(samplerate=sample_rate, channels=channels) as recorder:
         logger.info("%s stream opened successfully", source_name)
-        frames = recorder.record(numframes=probe_frames)
-        logger.info("%s first frame read succeeded", source_name)
-        startup_event.set()
-        frames = _normalise_channels(frames, channels)
-        first_chunk_path = _reserve_chunk_path(
-            state_path=state_path,
-            source_dir=output_dir,
-            source_name=source_name,
-            state_lock=state_lock,
-        )
-        soundfile_module.write(str(first_chunk_path), frames, sample_rate)
-        logger.info("%s first chunk write succeeded: %s", source_name, first_chunk_path)
-        _append_chunk_state(
-            state_path=state_path,
-            chunk_path=first_chunk_path,
-            state_lock=state_lock,
-        )
+        while True:
+            if stop_path.exists():
+                break
 
-        while not stop_path.exists():
-            frames = recorder.record(numframes=chunk_frames)
+            frames = recorder.record(numframes=read_frames)
             frames = _normalise_channels(frames, channels)
+            if buffered_frames is None:
+                logger.info("%s first frame read succeeded", source_name)
+                startup_event.set()
+                buffered_frames = frames
+            else:
+                buffered_frames = np.concatenate((buffered_frames, frames), axis=0)
+
+            while len(buffered_frames) >= chunk_frames:
+                chunk_payload = buffered_frames[:chunk_frames]
+                buffered_frames = buffered_frames[chunk_frames:]
+                chunk_path = _reserve_chunk_path(
+                    state_path=state_path,
+                    source_dir=output_dir,
+                    source_name=source_name,
+                    state_lock=state_lock,
+                )
+                soundfile_module.write(str(chunk_path), chunk_payload, sample_rate)
+                logger.info("Wrote %s chunk to %s", source_name, chunk_path)
+                _append_chunk_state(
+                    state_path=state_path,
+                    chunk_path=chunk_path,
+                    state_lock=state_lock,
+                )
+
+        if buffered_frames is not None and len(buffered_frames) > 0:
+            logger.info(
+                "Flushing partial %s chunk with %s frames after stop request",
+                source_name,
+                len(buffered_frames),
+            )
             chunk_path = _reserve_chunk_path(
                 state_path=state_path,
                 source_dir=output_dir,
                 source_name=source_name,
                 state_lock=state_lock,
             )
-            soundfile_module.write(str(chunk_path), frames, sample_rate)
+            soundfile_module.write(str(chunk_path), buffered_frames, sample_rate)
             logger.info("Wrote %s chunk to %s", source_name, chunk_path)
             _append_chunk_state(
                 state_path=state_path,
