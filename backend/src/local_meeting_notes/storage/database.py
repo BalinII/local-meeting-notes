@@ -29,6 +29,9 @@ MEETING_MIGRATIONS = {
     "latest_provider_name": "ALTER TABLE meetings ADD COLUMN latest_provider_name TEXT",
     "latest_model_name": "ALTER TABLE meetings ADD COLUMN latest_model_name TEXT",
     "has_reviewed_items": "ALTER TABLE meetings ADD COLUMN has_reviewed_items INTEGER NOT NULL DEFAULT 0",
+    "session_type": "ALTER TABLE meetings ADD COLUMN session_type TEXT NOT NULL DEFAULT 'ad_hoc'",
+    "planned_start_at": "ALTER TABLE meetings ADD COLUMN planned_start_at TEXT",
+    "planning_notes": "ALTER TABLE meetings ADD COLUMN planning_notes TEXT",
 }
 
 TRANSCRIPT_SEGMENT_MIGRATIONS = {

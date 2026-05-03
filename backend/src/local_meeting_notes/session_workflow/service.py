@@ -261,6 +261,7 @@ class SessionWorkflowService:
                     title=title,
                     status="draft",
                     started_at=now,
+                    session_type="ad_hoc",
                     capture_id=capture_id,
                     created_at=now,
                     updated_at=now,
@@ -272,6 +273,50 @@ class SessionWorkflowService:
             row = fetch_meeting_by_capture_id(connection, capture_id)
         assert row is not None
         return self._hydrate_session(dict(row))
+
+    def create_planned_session(
+        self,
+        *,
+        display_name: str,
+        planned_start_at: str | None = None,
+        planning_notes: str | None = None,
+    ) -> dict[str, object]:
+        cleaned_title = _clean_text(display_name)
+        if not cleaned_title:
+            raise ValueError("Display name is required.")
+        bootstrap_database(self.config)
+        capture_id = f"capture-{uuid4().hex[:8]}"
+        now = _utc_iso()
+        with connection_context(self.config.database_path) as connection:
+            insert_meeting(
+                connection,
+                MeetingRecord(
+                    id=None,
+                    external_id=f"capture:{capture_id}",
+                    title=cleaned_title,
+                    status="draft",
+                    started_at=now,
+                    session_type="planned",
+                    planned_start_at=_clean_text(planned_start_at),
+                    planning_notes=_clean_text(planning_notes),
+                    capture_id=capture_id,
+                    created_at=now,
+                    updated_at=now,
+                    manual_title=True,
+                    keep_source_audio=True,
+                ),
+            )
+            connection.commit()
+            row = fetch_meeting_by_capture_id(connection, capture_id)
+        assert row is not None
+        return self._hydrate_session(dict(row))
+
+    def list_planned_sessions(self, limit: int = 20) -> dict[str, object]:
+        payload = self.session_library(sort="newest", filter_status="all")
+        planned = [row for row in payload["sessions"] if row.get("session_type") == "planned" and row.get("lifecycle_state") in {"draft", "paused"}]
+        planned.sort(key=lambda row: str(row.get("planned_start_at") or row.get("created_at") or ""), reverse=False)
+        safe_limit = max(1, min(int(limit), 100))
+        return {"sessions": planned[:safe_limit]}
 
     def get_session(self, capture_id: str) -> dict[str, object]:
         bootstrap_database(self.config)
@@ -632,6 +677,9 @@ class SessionWorkflowService:
             "id": row["id"],
             "capture_id": row["capture_id"],
             "display_name": row["title"],
+            "session_type": row.get("session_type") or "ad_hoc",
+            "planned_start_at": row.get("planned_start_at"),
+            "planning_notes": row.get("planning_notes"),
             "lifecycle_state": row["status"],
             "created_at": row.get("created_at") or row["started_at"],
             "updated_at": row.get("updated_at") or row["started_at"],

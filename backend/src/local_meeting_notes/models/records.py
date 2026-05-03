@@ -12,6 +12,9 @@ class MeetingRecord:
     title: str
     status: str
     started_at: str
+    session_type: str = "ad_hoc"
+    planned_start_at: str | None = None
+    planning_notes: str | None = None
     capture_id: str = ""
     ended_at: str | None = None
     created_at: str | None = None

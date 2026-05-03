@@ -25,6 +25,9 @@ def insert_meeting(connection: sqlite3.Connection, meeting: MeetingRecord) -> in
             title,
             status,
             started_at,
+            session_type,
+            planned_start_at,
+            planning_notes,
             capture_id,
             ended_at,
             created_at,
@@ -44,13 +47,16 @@ def insert_meeting(connection: sqlite3.Connection, meeting: MeetingRecord) -> in
             latest_model_name,
             has_reviewed_items
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             meeting.external_id,
             meeting.title,
             meeting.status,
             meeting.started_at,
+            meeting.session_type,
+            meeting.planned_start_at,
+            meeting.planning_notes,
             meeting.capture_id,
             meeting.ended_at,
             meeting.created_at,

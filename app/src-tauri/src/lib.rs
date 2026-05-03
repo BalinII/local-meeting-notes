@@ -80,6 +80,24 @@ fn create_session(title: Option<String>) -> Result<serde_json::Value, String> {
     }
     run_backend_json(&args)
 }
+#[tauri::command]
+fn create_planned_session(title: String, planned_start_at: Option<String>, notes: Option<String>) -> Result<serde_json::Value, String> {
+    let mut args = vec!["session", "planned-create", "--title", title.as_str()];
+    if let Some(value) = planned_start_at.as_deref() {
+        args.push("--planned-start-at");
+        args.push(value);
+    }
+    if let Some(value) = notes.as_deref() {
+        args.push("--notes");
+        args.push(value);
+    }
+    run_backend_json(&args)
+}
+#[tauri::command]
+fn list_planned_sessions(limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(20).clamp(1, 100).to_string();
+    run_backend_json(&["session", "planned-list", "--limit", limit_arg.as_str()])
+}
 
 #[tauri::command]
 fn get_session(capture_id: String) -> Result<serde_json::Value, String> {
@@ -287,6 +305,8 @@ pub fn run() {
             scaffold_status,
             session_dashboard,
             create_session,
+            create_planned_session,
+            list_planned_sessions,
             get_session,
             rename_session,
             start_session,
