@@ -300,6 +300,30 @@ def test_dashboard_payload_includes_source_traced_action_workspace(local_tmp_dir
     assert {item["workflow_state"] for item in items} == {"open"}
 
 
+def test_planned_session_creation_and_listing(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    planned = service.create_planned_session(
+        display_name="Quarterly planning",
+        planned_start_at="2026-05-10T15:00:00+00:00",
+        planning_notes="Focus on launch blockers.",
+    )
+    assert planned["session_type"] == "planned"
+    assert planned["planned_start_at"] == "2026-05-10T15:00:00+00:00"
+    listing = service.list_planned_sessions(limit=10)
+    assert len(listing["sessions"]) == 1
+    assert listing["sessions"][0]["capture_id"] == planned["capture_id"]
+
+
 def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     bootstrap_database(config)

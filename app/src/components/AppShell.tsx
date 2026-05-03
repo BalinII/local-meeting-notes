@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createRecordingSession,
+  createPlannedSession,
   exportReview,
   finaliseCapture,
   listGlobalActions,
   listMemoryItems,
   listRecentCaptures,
+  listPlannedSessions,
   listSessionLibrary,
   loadReviewPayload,
   pauseRecordingSession,
@@ -63,6 +65,9 @@ export function AppShell() {
   const [recordingSession, setRecordingSession] = useState<SessionOverview | null>(null);
   const [newRecordingTitle, setNewRecordingTitle] = useState("");
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
+  const [plannedSessions, setPlannedSessions] = useState<SessionOverview[]>([]);
+  const [plannedTitle, setPlannedTitle] = useState("");
+  const [plannedStartAt, setPlannedStartAt] = useState("");
 
   useEffect(() => {
     void refreshAll();
@@ -81,7 +86,10 @@ export function AppShell() {
   }, [actionFilter, actionSort]);
 
   async function refreshAll() {
-    await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions()]);
+    await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions(), refreshPlannedSessions()]);
+  }
+  async function refreshPlannedSessions() {
+    setPlannedSessions(await listPlannedSessions(12));
   }
 
   async function refreshRecentCaptures() {
@@ -210,6 +218,14 @@ export function AppShell() {
       setIsRecordingBusy(false);
     }
   }
+  async function handleCreatePlannedSession() {
+    if (!plannedTitle.trim()) return;
+    const created = await createPlannedSession({ title: plannedTitle.trim(), plannedStartAt: plannedStartAt || null });
+    setStatus(`Planned session created: ${created.display_name}.`);
+    setPlannedTitle("");
+    setPlannedStartAt("");
+    await refreshAll();
+  }
 
   async function handlePauseRecording() {
     if (!recordingSession) return;
@@ -223,6 +239,21 @@ export function AppShell() {
       await refreshLibrary();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
+  }
+  async function handleStartPlannedSession(captureIdToStart: string) {
+    setIsRecordingBusy(true);
+    setStatus("Starting recording from planned session...");
+    try {
+      const started = await startRecordingSession(captureIdToStart);
+      setRecordingSession(started);
+      setSelectedCaptureId(started.capture_id);
+      setCaptureId(started.capture_id);
+      setPayload(null);
+      setStatus(`Recording ${started.display_name || started.capture_id}.`);
+      await refreshAll();
     } finally {
       setIsRecordingBusy(false);
     }
@@ -324,6 +355,11 @@ export function AppShell() {
             disabled={isRecordingBusy}
           />
         </div>
+        <div className="capture-toolbar recording-name-row">
+          <input placeholder="Planned session title" value={plannedTitle} onChange={(event) => setPlannedTitle(event.target.value)} />
+          <input type="datetime-local" value={plannedStartAt} onChange={(event) => setPlannedStartAt(event.target.value)} />
+          <button className="secondary-button" onClick={() => void handleCreatePlannedSession()} disabled={isRecordingBusy || !plannedTitle.trim()}>Create Planned Session</button>
+        </div>
         <div className="segmented-control">
           <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>New Recording</button>
           {(["review", "library", "search", "actions", "memory"] as WorkspaceTab[]).map((tab) => (
@@ -364,6 +400,16 @@ export function AppShell() {
           </div>
         )}
         <p className="status-line">{status}</p>
+        {plannedSessions.length > 0 && (
+          <div className="capture-list" style={{ marginTop: 12 }}>
+            {plannedSessions.map((session) => (
+              <button key={session.capture_id} className="capture-row" onClick={() => void handleStartPlannedSession(session.capture_id)}>
+                <div className="capture-row-title"><strong>{session.display_name}</strong></div>
+                <p className="capture-row-meta">{session.planned_start_at ? formatDate(session.planned_start_at) : "No planned start"} · Start from planned</p>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {activeTab === "review" && (

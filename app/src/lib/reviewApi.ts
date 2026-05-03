@@ -83,6 +83,9 @@ export type SessionOverview = SessionLibraryEntry & {
   latest_provider_name?: string | null;
   latest_model_name?: string | null;
   last_error?: string | null;
+  session_type?: "ad_hoc" | "planned";
+  planned_start_at?: string | null;
+  planning_notes?: string | null;
   active_capture?: {
     capture_id?: string | null;
     status?: string | null;
@@ -181,6 +184,17 @@ export async function createRecordingSession(title?: string | null): Promise<Ses
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("New Recording is available in Tauri desktop mode.");
   return invoke<SessionOverview>("create_session", { title: title?.trim() || null });
+}
+export async function createPlannedSession(input: { title: string; plannedStartAt?: string | null; notes?: string | null }): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Planned sessions are available in Tauri desktop mode.");
+  return invoke<SessionOverview>("create_planned_session", input);
+}
+export async function listPlannedSessions(limit = 20): Promise<SessionOverview[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return [];
+  const payload = await invoke<{ sessions: SessionOverview[] }>("list_planned_sessions", { limit });
+  return payload.sessions || [];
 }
 
 export async function startRecordingSession(captureId: string): Promise<SessionOverview> {
