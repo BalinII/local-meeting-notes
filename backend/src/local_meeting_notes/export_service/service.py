@@ -25,13 +25,14 @@ from ..storage.repository import (
 
 EXPORT_FORMATS = {"markdown", "html", "json"}
 REVIEW_STATUSES = {"generated", "accepted", "edited", "rejected"}
+EXPORT_MODES = {"final_notes", "full_detail"}
 
 
 class ExportService:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
-    def build_review_payload(self, capture_id: str) -> dict[str, Any]:
+    def build_review_payload(self, capture_id: str, export_mode: str = "full_detail") -> dict[str, Any]:
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
             meeting = fetch_meeting_by_capture_id(connection, capture_id)
@@ -42,6 +43,7 @@ class ExportService:
             decisions = [dict(row) for row in fetch_decisions_for_capture(connection, capture_id)]
             follow_ups = [dict(row) for row in fetch_follow_ups_for_capture(connection, capture_id)]
 
+        mode = _resolve_export_mode("json", export_mode)
         summaries = _consolidate_summaries(raw_summaries)
         actions = [_with_review_fields(item, "action") for item in actions]
         decisions = [_with_review_fields(item, "decision") for item in decisions]
@@ -71,6 +73,8 @@ class ExportService:
             "metadata": {
                 "display_name": str(meeting["title"]) if meeting is not None else None,
                 "content_state": _content_state_for_meeting(meeting),
+                "export_mode": mode,
+                "content_preference": "reviewed_first",
                 "providers": providers,
                 "latest_generated_at": max(generated_values) if generated_values else None,
                 "summary_count": len(summaries),
@@ -157,14 +161,14 @@ class ExportService:
             raise ValueError(f"No {item_type} found with id {item_id}.")
         return _with_review_fields(dict(row), item_type)
 
-    def render_export(self, capture_id: str, export_format: str) -> str:
-        payload = self.build_review_payload(capture_id)
+    def render_export(self, capture_id: str, export_format: str, export_mode: str | None = None) -> str:
+        payload = self.build_review_payload(capture_id, export_mode=_resolve_export_mode(export_format, export_mode))
         return _render_payload(payload=payload, export_format=export_format)
 
-    def export_capture(self, capture_id: str, export_format: str) -> Path:
+    def export_capture(self, capture_id: str, export_format: str, export_mode: str | None = None) -> Path:
         if export_format not in EXPORT_FORMATS:
             raise ValueError(f"Unsupported export format: {export_format}")
-        payload = self.build_review_payload(capture_id)
+        payload = self.build_review_payload(capture_id, export_mode=_resolve_export_mode(export_format, export_mode))
         content = _render_payload(payload=payload, export_format=export_format)
         extension = "md" if export_format == "markdown" else export_format
         output_dir = self.config.export_output_dir / capture_id
@@ -196,13 +200,16 @@ def _content_state_for_meeting(meeting: Any) -> str:
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
+    export_mode = str(payload.get("metadata", {}).get("export_mode") or "final_notes")
     display_name = _display_name(payload)
     lines = [
         f"# {display_name}",
         "",
-        "## Metadata",
+        "## Export Metadata",
         "",
         f"- Capture ID: `{payload['capture_id']}`",
+        f"- Export mode: {export_mode}",
+        f"- Content preference: {payload['metadata'].get('content_preference', 'reviewed_first')}",
         f"- Exported: {payload['exported_at']}",
         f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
     ]
@@ -214,15 +221,16 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines.append("")
 
     lines.extend(_markdown_summaries(payload))
-    lines.extend(_markdown_items("Actions", payload["actions"], include_owner=True))
-    lines.extend(_markdown_items("Decisions", payload["decisions"]))
-    lines.extend(_markdown_items("Follow-ups", payload["follow_ups"], include_owner=True))
-    lines.extend(_markdown_items("Blockers / Risks", payload["blockers_risks"], include_owner=True))
-    lines.extend(_markdown_items("Open Questions", payload["open_questions"], include_owner=True))
+    lines.extend(_markdown_items("Actions", payload["actions"], include_owner=True, export_mode=export_mode))
+    lines.extend(_markdown_items("Decisions", payload["decisions"], export_mode=export_mode))
+    lines.extend(_markdown_items("Follow-ups", payload["follow_ups"], include_owner=True, export_mode=export_mode))
+    lines.extend(_markdown_items("Blockers / Risks", payload["blockers_risks"], include_owner=True, export_mode=export_mode))
+    lines.extend(_markdown_items("Open Questions", payload["open_questions"], include_owner=True, export_mode=export_mode))
     return "\n".join(lines).rstrip() + "\n"
 
 
 def render_html(payload: dict[str, Any]) -> str:
+    export_mode = str(payload.get("metadata", {}).get("export_mode") or "final_notes")
     display_name = _display_name(payload)
     body = [
         f"<h1>{html.escape(display_name)}</h1>",
@@ -230,15 +238,16 @@ def render_html(payload: dict[str, Any]) -> str:
         "<nav><a href=\"#executive-summary\">Executive Summary</a><a href=\"#detailed-summary\">Detailed Summary</a><a href=\"#actions\">Actions</a><a href=\"#decisions\">Decisions</a><a href=\"#follow-ups\">Follow-ups</a><a href=\"#blockers-risks\">Blockers / Risks</a><a href=\"#open-questions\">Open Questions</a></nav>",
         "<section class=\"metadata\" id=\"metadata\">",
         f"<p><strong>Exported:</strong> {html.escape(payload['exported_at'])}</p>",
+        f"<p><strong>Content preference:</strong> {html.escape(str(payload['metadata'].get('content_preference', 'reviewed_first')))}</p>",
         f"<p><strong>Providers:</strong> {html.escape(', '.join(payload['metadata']['providers']) or 'Unknown')}</p>",
         f"<p><strong>Models:</strong> {html.escape(', '.join(_provider_model_names(payload)) or 'Unknown')}</p>",
         "</section>",
         _html_summaries(payload),
-        _html_items("Actions", payload["actions"], include_owner=True),
-        _html_items("Decisions", payload["decisions"]),
-        _html_items("Follow-ups", payload["follow_ups"], include_owner=True),
-        _html_items("Blockers / Risks", payload["blockers_risks"], include_owner=True),
-        _html_items("Open Questions", payload["open_questions"], include_owner=True),
+        _html_items("Actions", payload["actions"], include_owner=True, export_mode=export_mode),
+        _html_items("Decisions", payload["decisions"], export_mode=export_mode),
+        _html_items("Follow-ups", payload["follow_ups"], include_owner=True, export_mode=export_mode),
+        _html_items("Blockers / Risks", payload["blockers_risks"], include_owner=True, export_mode=export_mode),
+        _html_items("Open Questions", payload["open_questions"], include_owner=True, export_mode=export_mode),
     ]
     return f"""<!doctype html>
 <html lang="en">
@@ -456,14 +465,15 @@ def _build_export_filename(*, payload: dict[str, Any], extension: str) -> str:
     if not exported_date:
         exported_date = datetime.now(timezone.utc).date().isoformat()
     display_part = _slugify(_display_name(payload))
-    return f"{display_part}-{exported_date}.{extension}"
+    mode = str(payload.get("metadata", {}).get("export_mode") or "final_notes").replace("_", "-")
+    return f"{display_part}-{mode}-{exported_date}.{extension}"
 
 
 def _markdown_items(
-    title: str, items: list[dict[str, Any]], *, include_owner: bool = False
+    title: str, items: list[dict[str, Any]], *, include_owner: bool = False, export_mode: str = "final_notes"
 ) -> list[str]:
     lines = [f"## {title}", ""]
-    exportable_items = _exportable_items(items)
+    exportable_items = _exportable_items(items, export_mode=export_mode)
     if not exportable_items:
         return lines + [f"No {title.lower()} found.", ""]
     for item in exportable_items:
@@ -501,9 +511,11 @@ def _html_summaries(payload: dict[str, Any]) -> str:
     return "".join(articles)
 
 
-def _html_items(title: str, items: list[dict[str, Any]], *, include_owner: bool = False) -> str:
+def _html_items(
+    title: str, items: list[dict[str, Any]], *, include_owner: bool = False, export_mode: str = "final_notes"
+) -> str:
     section_id = _slugify(title)
-    exportable_items = _exportable_items(items)
+    exportable_items = _exportable_items(items, export_mode=export_mode)
     if not exportable_items:
         return f"<section id=\"{html.escape(section_id)}\"><h2>{html.escape(title)}</h2><p>No {html.escape(title.lower())} found.</p></section>"
     rows = []
@@ -565,8 +577,20 @@ def _with_review_fields(item: dict[str, Any], item_type: str) -> dict[str, Any]:
     return item
 
 
-def _exportable_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [item for item in items if item.get("review_status") != "rejected"]
+def _exportable_items(items: list[dict[str, Any]], *, export_mode: str = "final_notes") -> list[dict[str, Any]]:
+    filtered = [item for item in items if item.get("review_status") != "rejected"]
+    if export_mode == "full_detail":
+        return filtered
+    preferred = [item for item in filtered if item.get("review_status") in {"accepted", "edited"}]
+    return preferred or filtered
+
+
+def _resolve_export_mode(export_format: str, export_mode: str | None = None) -> str:
+    if export_mode in EXPORT_MODES:
+        return export_mode
+    if export_format == "json":
+        return "full_detail"
+    return "final_notes"
 
 
 def _effective_description(item: dict[str, Any]) -> str:
