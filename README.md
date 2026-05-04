@@ -16,6 +16,7 @@ The current app supports a local recording-to-review workflow:
 6. export Markdown, HTML, or JSON
 7. browse recent sessions, search across local content, and use global action/memory views
 8. create lightweight planned sessions and start recording from a planned session
+9. optionally create a session from lightweight upcoming-meeting context (mock/local staged path)
 
 The safest demo mode is microphone-only recording. System audio / loopback capture is constrained and hardware-dependent; parallel mic plus loopback processing is not treated as a reliable aligned transcript yet.
 
@@ -137,7 +138,9 @@ python -m local_meeting_notes.app memory list --item-type decisions
 
 The Session Library is a local session browser. It shows the display name first, capture id second, then lifecycle, review/final/export status, timestamps, and compact provider/model metadata when available. The desktop library supports `newest` and `oldest` sorting plus simple filters for all sessions, review-ready sessions, finalised sessions, exported sessions, and sessions needing attention.
 
-Planned sessions are intentionally lightweight in this phase: title, optional planned start time, optional context notes, and a direct start-recording path. This is not calendar sync, reminders, recurrence, or attendee management.
+Planned sessions are intentionally lightweight in this phase: title, optional planned start time, optional context notes, and a direct start-recording path. Upcoming-meeting creation is also lightweight and currently uses a local/mock provider boundary so future calendar integrations can slot in without redesigning the workflow. This is not calendar sync, reminders, recurrence, attendee management, or a Teams bot.
+
+Ad hoc recording remains the default path. Manual naming/editing always wins over imported/upcoming metadata after a session is created.
 
 Search is also local and SQLite-backed. Results are grouped by session, prefer reviewed/effective extracted content where it exists, hide rejected extracted items, reduce duplicate evidence/content matches, and cap noisy repeats per session. Search scopes are intentionally lightweight: all, sessions, summaries, actions, decisions, blockers/risks, and open questions.
 

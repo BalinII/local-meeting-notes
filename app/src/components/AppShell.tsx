@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   createRecordingSession,
   createPlannedSession,
+  createSessionFromUpcoming,
   exportReview,
   finaliseCapture,
   listGlobalActions,
   listMemoryItems,
   listRecentCaptures,
   listPlannedSessions,
+  listUpcomingSessions,
   listSessionLibrary,
   loadReviewPayload,
   pauseRecordingSession,
@@ -66,6 +68,7 @@ export function AppShell() {
   const [newRecordingTitle, setNewRecordingTitle] = useState("");
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
   const [plannedSessions, setPlannedSessions] = useState<SessionOverview[]>([]);
+  const [upcomingSessions, setUpcomingSessions] = useState<SessionOverview[]>([]);
   const [plannedTitle, setPlannedTitle] = useState("");
   const [plannedStartAt, setPlannedStartAt] = useState("");
 
@@ -86,10 +89,13 @@ export function AppShell() {
   }, [actionFilter, actionSort]);
 
   async function refreshAll() {
-    await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions(), refreshPlannedSessions()]);
+    await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions(), refreshPlannedSessions(), refreshUpcomingSessions()]);
   }
   async function refreshPlannedSessions() {
     setPlannedSessions(await listPlannedSessions(12));
+  }
+  async function refreshUpcomingSessions() {
+    setUpcomingSessions(await listUpcomingSessions(12));
   }
 
   async function refreshRecentCaptures() {
@@ -258,6 +264,15 @@ export function AppShell() {
       setIsRecordingBusy(false);
     }
   }
+  async function handleCreateFromUpcoming(session: SessionOverview) {
+    const created = await createSessionFromUpcoming({
+      title: session.display_name,
+      plannedStartAt: session.planned_start_at || null,
+      externalMeetingId: (session as SessionOverview & { external_meeting_id?: string }).external_meeting_id || null,
+    });
+    setStatus(`Created from upcoming context: ${created.display_name}.`);
+    await refreshAll();
+  }
 
   async function handleResumeRecording() {
     if (!recordingSession) return;
@@ -406,6 +421,16 @@ export function AppShell() {
               <button key={session.capture_id} className="capture-row" onClick={() => void handleStartPlannedSession(session.capture_id)}>
                 <div className="capture-row-title"><strong>{session.display_name}</strong></div>
                 <p className="capture-row-meta">{session.planned_start_at ? formatDate(session.planned_start_at) : "No planned start"} · Start from planned</p>
+              </button>
+            ))}
+          </div>
+        )}
+        {upcomingSessions.length > 0 && (
+          <div className="capture-list" style={{ marginTop: 12 }}>
+            {upcomingSessions.filter((session) => !session.capture_id).map((session, index) => (
+              <button key={`${session.display_name}-${index}`} className="capture-row" onClick={() => void handleCreateFromUpcoming(session)}>
+                <div className="capture-row-title"><strong>{session.display_name}</strong></div>
+                <p className="capture-row-meta">{session.planned_start_at ? formatDate(session.planned_start_at) : "No planned start"} · From upcoming meeting</p>
               </button>
             ))}
           </div>

@@ -98,6 +98,24 @@ fn list_planned_sessions(limit: Option<i64>) -> Result<serde_json::Value, String
     let limit_arg = limit.unwrap_or(20).clamp(1, 100).to_string();
     run_backend_json(&["session", "planned-list", "--limit", limit_arg.as_str()])
 }
+#[tauri::command]
+fn list_upcoming_sessions(limit: Option<i64>) -> Result<serde_json::Value, String> {
+    let limit_arg = limit.unwrap_or(20).clamp(1, 100).to_string();
+    run_backend_json(&["session", "upcoming-list", "--limit", limit_arg.as_str()])
+}
+#[tauri::command]
+fn create_session_from_upcoming(title: String, planned_start_at: Option<String>, external_meeting_id: Option<String>) -> Result<serde_json::Value, String> {
+    let mut args = vec!["session", "upcoming-create", "--title", title.as_str()];
+    if let Some(value) = planned_start_at.as_deref() {
+        args.push("--planned-start-at");
+        args.push(value);
+    }
+    if let Some(value) = external_meeting_id.as_deref() {
+        args.push("--external-meeting-id");
+        args.push(value);
+    }
+    run_backend_json(&args)
+}
 
 #[tauri::command]
 fn get_session(capture_id: String) -> Result<serde_json::Value, String> {
@@ -307,6 +325,8 @@ pub fn run() {
             create_session,
             create_planned_session,
             list_planned_sessions,
+            list_upcoming_sessions,
+            create_session_from_upcoming,
             get_session,
             rename_session,
             start_session,

@@ -67,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
     session_planned_create.add_argument("--notes")
     session_planned_list = session_subparsers.add_parser("planned-list", help="List planned sessions.")
     session_planned_list.add_argument("--limit", type=int, default=20)
+    session_upcoming_list = session_subparsers.add_parser("upcoming-list", help="List lightweight upcoming session options.")
+    session_upcoming_list.add_argument("--limit", type=int, default=20)
+    session_upcoming_create = session_subparsers.add_parser("upcoming-create", help="Create a planned session from upcoming meeting context.")
+    session_upcoming_create.add_argument("--title", required=True)
+    session_upcoming_create.add_argument("--planned-start-at")
+    session_upcoming_create.add_argument("--external-meeting-id")
     session_get = session_subparsers.add_parser("get", help="Get a persisted recording session.")
     session_get.add_argument("--capture-id", required=True)
     session_rename = session_subparsers.add_parser("rename", help="Update the display name for a session.")
@@ -730,6 +736,22 @@ def run_session_planned_list(limit: int) -> int:
     return 0
 
 
+def run_session_upcoming_list(limit: int) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.list_upcoming_sessions(limit=limit), ensure_ascii=False))
+    return 0
+
+
+def run_session_upcoming_create(title: str, planned_start_at: str | None = None, external_meeting_id: str | None = None) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.create_session_from_upcoming({
+        "title": title,
+        "planned_start_at": planned_start_at,
+        "external_meeting_id": external_meeting_id,
+    }), ensure_ascii=False))
+    return 0
+
+
 def run_session_get(capture_id: str) -> int:
     service = _get_session_workflow_service()
     try:
@@ -934,6 +956,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_planned_create(args.title, args.planned_start_at, args.notes)
     if args.command == "session" and args.session_command == "planned-list":
         return run_session_planned_list(args.limit)
+    if args.command == "session" and args.session_command == "upcoming-list":
+        return run_session_upcoming_list(args.limit)
+    if args.command == "session" and args.session_command == "upcoming-create":
+        return run_session_upcoming_create(args.title, planned_start_at=args.planned_start_at, external_meeting_id=args.external_meeting_id)
     if args.command == "session" and args.session_command == "get":
         return run_session_get(args.capture_id)
     if args.command == "session" and args.session_command == "rename":
