@@ -331,7 +331,15 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 actions.review_status AS review_status,
                 actions.reviewed_description AS reviewed_description,
                 actions.reviewed_owner_name AS reviewed_owner_name,
-                actions.reviewed_at AS reviewed_at
+                actions.reviewed_at AS reviewed_at,
+                actions.due_at AS due_at,
+                actions.notes AS notes,
+                actions.carry_source_capture_id AS carry_source_capture_id,
+                actions.carry_count AS carry_count,
+                actions.due_at AS due_at,
+                actions.notes AS notes,
+                actions.carry_source_capture_id AS carry_source_capture_id,
+                actions.carry_count AS carry_count
             FROM actions
             INNER JOIN meetings ON meetings.id = actions.meeting_id
             WHERE actions.review_status <> 'rejected'
@@ -383,7 +391,11 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 follow_ups.review_status AS review_status,
                 follow_ups.reviewed_description AS reviewed_description,
                 follow_ups.reviewed_owner_name AS reviewed_owner_name,
-                follow_ups.reviewed_at AS reviewed_at
+                follow_ups.reviewed_at AS reviewed_at,
+                follow_ups.due_at AS due_at,
+                follow_ups.notes AS notes,
+                follow_ups.carry_source_capture_id AS carry_source_capture_id,
+                follow_ups.carry_count AS carry_count
             FROM follow_ups
             INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
             WHERE follow_ups.review_status <> 'rejected'
@@ -647,10 +659,21 @@ def update_workspace_item_status(
     reviewed_at: str,
 ) -> sqlite3.Row | None:
     table_name = _table_name_for_extracted_item(item_type)
-    connection.execute(
-        f"UPDATE {table_name} SET status = ?, reviewed_at = ? WHERE id = ?",
-        (workflow_status, reviewed_at, item_id),
-    )
+    if workflow_status == "carried_forward":
+        connection.execute(
+            f"""
+            UPDATE {table_name}
+            SET status = ?, reviewed_at = ?, carry_count = COALESCE(carry_count, 0) + 1,
+                carry_source_capture_id = COALESCE(carry_source_capture_id, capture_id)
+            WHERE id = ?
+            """,
+            (workflow_status, reviewed_at, item_id),
+        )
+    else:
+        connection.execute(
+            f"UPDATE {table_name} SET status = ?, reviewed_at = ? WHERE id = ?",
+            (workflow_status, reviewed_at, item_id),
+        )
     if item_type == "action":
         return connection.execute(
             """
@@ -673,7 +696,11 @@ def update_workspace_item_status(
                 actions.review_status AS review_status,
                 actions.reviewed_description AS reviewed_description,
                 actions.reviewed_owner_name AS reviewed_owner_name,
-                actions.reviewed_at AS reviewed_at
+                actions.reviewed_at AS reviewed_at,
+                actions.due_at AS due_at,
+                actions.notes AS notes,
+                actions.carry_source_capture_id AS carry_source_capture_id,
+                actions.carry_count AS carry_count
             FROM actions
             INNER JOIN meetings ON meetings.id = actions.meeting_id
             WHERE actions.id = ?
@@ -702,7 +729,11 @@ def update_workspace_item_status(
                 follow_ups.review_status AS review_status,
                 follow_ups.reviewed_description AS reviewed_description,
                 follow_ups.reviewed_owner_name AS reviewed_owner_name,
-                follow_ups.reviewed_at AS reviewed_at
+                follow_ups.reviewed_at AS reviewed_at,
+                follow_ups.due_at AS due_at,
+                follow_ups.notes AS notes,
+                follow_ups.carry_source_capture_id AS carry_source_capture_id,
+                follow_ups.carry_count AS carry_count
             FROM follow_ups
             INNER JOIN meetings ON meetings.id = follow_ups.meeting_id
             WHERE follow_ups.id = ?
@@ -710,6 +741,29 @@ def update_workspace_item_status(
             (item_id,),
         ).fetchone()
     return None
+
+
+def update_workspace_item_details(
+    connection: sqlite3.Connection,
+    *,
+    item_type: str,
+    item_id: int,
+    due_at: str | None,
+    notes: str | None,
+    reviewed_at: str,
+) -> sqlite3.Row | None:
+    table_name = _table_name_for_extracted_item(item_type)
+    connection.execute(
+        f"UPDATE {table_name} SET due_at = ?, notes = ?, reviewed_at = ? WHERE id = ?",
+        (due_at, notes, reviewed_at, item_id),
+    )
+    return update_workspace_item_status(
+        connection,
+        item_type=item_type,
+        item_id=item_id,
+        workflow_status=connection.execute(f"SELECT status FROM {table_name} WHERE id = ?", (item_id,)).fetchone()["status"],
+        reviewed_at=reviewed_at,
+    )
 
 
 def update_meeting_fields(

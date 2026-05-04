@@ -77,6 +77,10 @@ ACTION_MIGRATIONS = {
     "reviewed_description": "ALTER TABLE actions ADD COLUMN reviewed_description TEXT",
     "reviewed_owner_name": "ALTER TABLE actions ADD COLUMN reviewed_owner_name TEXT",
     "reviewed_at": "ALTER TABLE actions ADD COLUMN reviewed_at TEXT",
+    "due_at": "ALTER TABLE actions ADD COLUMN due_at TEXT",
+    "notes": "ALTER TABLE actions ADD COLUMN notes TEXT",
+    "carry_source_capture_id": "ALTER TABLE actions ADD COLUMN carry_source_capture_id TEXT",
+    "carry_count": "ALTER TABLE actions ADD COLUMN carry_count INTEGER NOT NULL DEFAULT 0",
 }
 
 DECISION_MIGRATIONS = {
@@ -108,6 +112,10 @@ FOLLOW_UP_MIGRATIONS = {
     "reviewed_description": "ALTER TABLE follow_ups ADD COLUMN reviewed_description TEXT",
     "reviewed_owner_name": "ALTER TABLE follow_ups ADD COLUMN reviewed_owner_name TEXT",
     "reviewed_at": "ALTER TABLE follow_ups ADD COLUMN reviewed_at TEXT",
+    "due_at": "ALTER TABLE follow_ups ADD COLUMN due_at TEXT",
+    "notes": "ALTER TABLE follow_ups ADD COLUMN notes TEXT",
+    "carry_source_capture_id": "ALTER TABLE follow_ups ADD COLUMN carry_source_capture_id TEXT",
+    "carry_count": "ALTER TABLE follow_ups ADD COLUMN carry_count INTEGER NOT NULL DEFAULT 0",
 }
 
 

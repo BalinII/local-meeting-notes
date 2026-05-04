@@ -119,7 +119,7 @@ export type SearchSessionGroup = {
 export type LibrarySort = "newest" | "oldest";
 export type LibraryFilter = "all" | "review-ready" | "finalised" | "exported" | "needs-attention";
 export type SearchScope = "all" | "sessions" | "summaries" | "actions" | "decisions" | "blockers-risks" | "open-questions";
-export type ActionWorkflowFilter = "active" | "all" | "open" | "done" | "carried-forward" | "dismissed";
+export type ActionWorkflowFilter = "active" | "all" | "open" | "done" | "carried-forward" | "dismissed" | "overdue" | "due-soon";
 export type ActionWorkflowSort = "recent" | "oldest" | "owner" | "session";
 
 export type ActionTrackerItem = {
@@ -133,6 +133,10 @@ export type ActionTrackerItem = {
   workflow_state: "open" | "done" | "dismissed" | "carried_forward";
   reviewed_at?: string | null;
   last_updated_at?: string | null;
+  due_at?: string | null;
+  notes?: string | null;
+  carry_source_capture_id?: string | null;
+  carry_count?: number;
 };
 
 type TauriGlobal = {
@@ -271,6 +275,8 @@ export async function updateActionWorkflow(input: {
   itemType: "action" | "follow_up";
   itemId: number;
   workflowStatus: ActionTrackerItem["workflow_state"];
+  dueAt?: string | null;
+  notes?: string | null;
 }): Promise<void> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return;
@@ -281,6 +287,9 @@ export async function updateActionWorkflow(input: {
     item_id: input.itemId,
     workflowStatus: input.workflowStatus,
     workflow_status: input.workflowStatus,
+    dueAt: input.dueAt,
+    due_at: input.dueAt,
+    notes: input.notes,
   });
 }
 
