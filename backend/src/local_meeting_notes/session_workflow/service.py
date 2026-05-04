@@ -13,6 +13,7 @@ from ..audio_capture.service import AudioCaptureService
 from ..config import AppConfig
 from ..diarization_engine.service import DiarizationEngineService
 from ..export_service.service import ExportService
+from ..microsoft_integration.service import MicrosoftIntegrationService
 from ..models import MeetingRecord
 from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
@@ -63,6 +64,7 @@ class SessionWorkflowService:
         summarizer: SummarizerService,
         action_extractor: ActionExtractorService,
         export_service: ExportService,
+        microsoft_integration: MicrosoftIntegrationService | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         self.config = config
@@ -72,6 +74,7 @@ class SessionWorkflowService:
         self.summarizer = summarizer
         self.action_extractor = action_extractor
         self.export_service = export_service
+        self.microsoft_integration = microsoft_integration
         self.logger = logger or logging.getLogger("local_meeting_notes.session_workflow")
 
     def dashboard_payload(self) -> dict[str, object]:
@@ -315,10 +318,25 @@ class SessionWorkflowService:
 
     def list_upcoming_sessions(self, limit: int = 20) -> dict[str, object]:
         planned = self.list_planned_sessions(limit=limit).get("sessions", [])
-        upcoming = planned + [self._meeting_to_upcoming_entry(item) for item in self._mock_upcoming_meetings()]
+        integration = self.microsoft_integration
+        calendar_status = {
+            "available": False,
+            "provider": None,
+            "message": "Live calendar integration is unavailable; manual planning remains available.",
+        }
+        imported: list[dict[str, object]] = []
+        if integration is not None:
+            result = integration.list_upcoming_meetings(limit=limit)
+            calendar_status = {
+                "available": bool(result.available),
+                "provider": result.provider,
+                "message": result.message,
+            }
+            imported = [self._meeting_to_upcoming_entry(item) for item in result.meetings]
+        upcoming = planned + imported
         upcoming.sort(key=lambda row: str(row.get("planned_start_at") or row.get("created_at") or ""))
         safe_limit = max(1, min(int(limit), 100))
-        return {"sessions": upcoming[:safe_limit]}
+        return {"sessions": upcoming[:safe_limit], "calendar_status": calendar_status}
 
     def create_session_from_upcoming(self, meeting_context: dict[str, object]) -> dict[str, object]:
         imported_title = _clean_text(str(meeting_context.get("title") or ""))
@@ -750,16 +768,6 @@ class SessionWorkflowService:
             "audio_present": (self.config.audio_output_dir / str(row["capture_id"])).exists(),
             "active_capture": active_capture,
         }
-
-    def _mock_upcoming_meetings(self) -> list[dict[str, str]]:
-        return [
-            {
-                "external_meeting_id": "local-mock-standup",
-                "title": "Engineering Standup",
-                "planned_start_at": "2026-05-04T16:00:00+00:00",
-                "imported_metadata_json": '{"provider":"mock_local","location":"Teams link unavailable in local mode"}',
-            }
-        ]
 
     def _meeting_to_upcoming_entry(self, meeting: dict[str, str]) -> dict[str, object]:
         return {

@@ -32,6 +32,7 @@ import {
   type SessionLibraryEntry,
   type SessionOverview,
   type SummaryOutput,
+  type CalendarStatus,
 } from "../lib/reviewApi";
 import { recordingConfidenceForState } from "../lib/recordingConfidence";
 
@@ -69,6 +70,7 @@ export function AppShell() {
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
   const [plannedSessions, setPlannedSessions] = useState<SessionOverview[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<SessionOverview[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [plannedTitle, setPlannedTitle] = useState("");
   const [plannedStartAt, setPlannedStartAt] = useState("");
 
@@ -95,7 +97,9 @@ export function AppShell() {
     setPlannedSessions(await listPlannedSessions(12));
   }
   async function refreshUpcomingSessions() {
-    setUpcomingSessions(await listUpcomingSessions(12));
+    const payload = await listUpcomingSessions(12);
+    setUpcomingSessions(payload.sessions || []);
+    setCalendarStatus(payload.calendar_status || null);
   }
 
   async function refreshRecentCaptures() {
@@ -371,6 +375,7 @@ export function AppShell() {
           />
         </div>
         <div className="capture-toolbar recording-name-row">
+          <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>Start Ad Hoc Recording</button>
           <input placeholder="Planned session title" value={plannedTitle} onChange={(event) => setPlannedTitle(event.target.value)} />
           <input type="datetime-local" value={plannedStartAt} onChange={(event) => setPlannedStartAt(event.target.value)} />
           <button className="secondary-button" onClick={() => void handleCreatePlannedSession()} disabled={isRecordingBusy || !plannedTitle.trim()}>Create Planned Session</button>
@@ -435,6 +440,7 @@ export function AppShell() {
             ))}
           </div>
         )}
+        {calendarStatus && <p className="capture-row-meta" style={{ marginTop: 10 }}>{calendarStatus.message}</p>}
       </section>
 
       {activeTab === "review" && (

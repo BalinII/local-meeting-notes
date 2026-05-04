@@ -95,6 +95,11 @@ export type SessionOverview = SessionLibraryEntry & {
     last_error?: string | null;
   } | null;
 };
+export type CalendarStatus = {
+  available: boolean;
+  provider?: string | null;
+  message: string;
+};
 
 export type SearchMatch = {
   item_type: string;
@@ -199,11 +204,11 @@ export async function listPlannedSessions(limit = 20): Promise<SessionOverview[]
   const payload = await invoke<{ sessions: SessionOverview[] }>("list_planned_sessions", { limit });
   return payload.sessions || [];
 }
-export async function listUpcomingSessions(limit = 20): Promise<SessionOverview[]> {
+export async function listUpcomingSessions(limit = 20): Promise<{ sessions: SessionOverview[]; calendar_status?: CalendarStatus }> {
   const invoke = window.__TAURI__?.core?.invoke;
-  if (!invoke) return [];
-  const payload = await invoke<{ sessions: SessionOverview[] }>("list_upcoming_sessions", { limit });
-  return payload.sessions || [];
+  if (!invoke) return { sessions: [] };
+  const payload = await invoke<{ sessions: SessionOverview[]; calendar_status?: CalendarStatus }>("list_upcoming_sessions", { limit });
+  return { sessions: payload.sessions || [], calendar_status: payload.calendar_status };
 }
 export async function createSessionFromUpcoming(input: { title: string; plannedStartAt?: string | null; externalMeetingId?: string | null }): Promise<SessionOverview> {
   const invoke = window.__TAURI__?.core?.invoke;

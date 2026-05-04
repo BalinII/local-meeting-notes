@@ -136,3 +136,26 @@ Quality retest flow:
 - The payload separates follow-ups, blockers/risks, and open questions for cleaner review.
 - Markdown and HTML exports use reviewed text where available and omit rejected extracted items. JSON exports keep the full review payload, including original and reviewed fields.
 - Recording pause/resume stays inside one immutable `capture_id`; new audio chunks are appended into the same capture directory with deterministic chunk prefixes so later transcription and diarization preserve order across resumed recordings.
+
+## Live Upcoming Meeting Integration (Read-Only)
+
+- Upcoming meetings can be loaded from Microsoft 365 calendar in a narrow, read-only mode.
+- Scope is intentionally limited to:
+  - reading upcoming meetings
+  - creating a local planned session from a selected meeting
+  - starting recording from that local session
+- Not included in this phase:
+  - recurrence management
+  - reminders
+  - attendee workflows
+  - bot-based meeting joining
+
+Environment variables:
+- `CALENDAR_PROVIDER=none|microsoft_graph` (default `none`)
+- `MICROSOFT_GRAPH_ACCESS_TOKEN=<token with calendar read scope>`
+- `MICROSOFT_GRAPH_BASE_URL` (optional, default `https://graph.microsoft.com/v1.0`)
+- `CALENDAR_LOOKAHEAD_HOURS` (optional, default `48`)
+
+Fallback behavior:
+- If calendar provider is disabled, token is missing, or a request fails, upcoming import degrades gracefully.
+- Manual planned sessions and ad hoc recording continue to work unchanged.
