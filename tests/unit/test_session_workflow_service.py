@@ -771,3 +771,70 @@ def test_action_workspace_filters_sorts_and_exposes_last_updated(local_tmp_dir) 
         "Beta Session",
     ]
     assert done["items"][0]["last_updated_at"] == "2026-04-24T00:00:00+00:00"
+
+
+class FakeMicrosoftIntegrationService:
+    def __init__(self, *, available: bool = True, meetings: list[dict[str, object]] | None = None, message: str = "ok") -> None:
+        self.available = available
+        self.meetings = meetings or []
+        self.message = message
+
+    def list_upcoming_meetings(self, *, limit: int = 20):
+        class Result:
+            def __init__(self, meetings, available, message):
+                self.meetings = meetings[:limit]
+                self.available = available
+                self.message = message
+                self.provider = "microsoft_graph"
+        return Result(self.meetings, self.available, self.message)
+
+
+def test_upcoming_sessions_include_calendar_status_and_imports(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+        microsoft_integration=FakeMicrosoftIntegrationService(meetings=[{
+            "external_meeting_id": "msgraph:abc",
+            "title": "Calendar Sync",
+            "planned_start_at": "2026-05-04T16:00:00+00:00",
+            "imported_metadata_json": '{"provider":"microsoft_graph"}',
+        }]),
+    )
+
+    payload = service.list_upcoming_sessions(limit=10)
+
+    assert payload["calendar_status"]["available"] is True
+    imported = [row for row in payload["sessions"] if not row.get("capture_id")]
+    assert imported
+    assert imported[0]["display_name"] == "Calendar Sync"
+
+
+def test_manual_rename_remains_authoritative_for_imported_session(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=FakeExportService(),  # type: ignore[arg-type]
+    )
+    created = service.create_session_from_upcoming({
+        "title": "Imported Title",
+        "planned_start_at": "2026-05-04T16:00:00+00:00",
+        "external_meeting_id": "msgraph:abc",
+    })
+
+    renamed = service.update_session_display_name(created["capture_id"], "Manual Override")
+
+    assert renamed["display_name"] == "Manual Override"
+    assert renamed["imported_title"] == "Imported Title"

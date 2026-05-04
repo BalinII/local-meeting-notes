@@ -41,6 +41,7 @@ def build_service_registry(config: AppConfig, logger: logging.Logger | None = No
         summarizer=services["summarizer"],
         action_extractor=services["action_extractor"],
         export_service=services["export_service"],
+        microsoft_integration=services["microsoft_integration"],
         logger=logger,
     )
     return services

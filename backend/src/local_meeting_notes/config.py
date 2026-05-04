@@ -38,6 +38,10 @@ class AppConfig:
     audio_capture_state_path: Path
     raw_audio_retention_days: int
     delete_temp_processing_files: bool
+    calendar_provider: str
+    microsoft_graph_base_url: str
+    microsoft_graph_access_token: str | None
+    calendar_lookahead_hours: int
 
 
 def project_root() -> Path:
@@ -114,4 +118,8 @@ def load_config(env: dict[str, str] | None = None) -> AppConfig:
         audio_capture_state_path=audio_capture_state_path,
         raw_audio_retention_days=int(source.get("RAW_AUDIO_RETENTION_DAYS", "14")),
         delete_temp_processing_files=source.get("DELETE_TEMP_PROCESSING_FILES", "1") not in {"0", "false", "False"},
+        calendar_provider=source.get("CALENDAR_PROVIDER", "none"),
+        microsoft_graph_base_url=source.get("MICROSOFT_GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0"),
+        microsoft_graph_access_token=source.get("MICROSOFT_GRAPH_ACCESS_TOKEN"),
+        calendar_lookahead_hours=int(source.get("CALENDAR_LOOKAHEAD_HOURS", "48")),
     )
