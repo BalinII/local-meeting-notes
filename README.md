@@ -173,25 +173,43 @@ If Ollama is unavailable, slow, returns invalid JSON, or produces weakly grounde
 
 ## Validation Commands
 
-Backend tests:
+CI runs on every pull request and on pushes to `main` or `master`. It is split into three checks:
+
+- `backend-test`: installs the backend with dev test dependencies on Python 3.12 on `windows-latest`, sets `PYTHONPATH=backend/src`, and runs the full pytest suite with timeout and coverage reporting.
+- `frontend-test`: installs `app/` dependencies with `npm ci`, builds the React/Vite app, installs Chromium for Playwright, and runs minimal web-layer smoke tests.
+- `tauri-check`: runs `cargo check` in `app/src-tauri` on `windows-latest`.
+
+Run the full backend test suite locally from repo root with the virtual environment active:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests\unit\test_session_workflow_service.py -q
+pip install -e .\backend[dev]
+.\.venv\Scripts\python.exe -m pytest tests --timeout=120 --cov=local_meeting_notes --cov-report=term-missing
 ```
 
-Frontend build:
+For a faster targeted backend check:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\unit -q
+```
+
+Run the frontend build and smoke tests:
 
 ```powershell
 cd .\app
+npm install
 npm run build
+npx playwright install chromium
+npm run test:smoke
 ```
 
-Tauri/Rust check:
+Run the Tauri/Rust safety check:
 
 ```powershell
 cd .\app\src-tauri
 cargo check
 ```
+
+Current CI intentionally does not automate real microphone/system-audio capture, Tauri desktop packaging/signing, Microsoft/Outlook/Teams integration, Ollama runtime quality validation, or subjective LLM output grading. Those remain manual validation areas for now.
 
 ## Documentation
 

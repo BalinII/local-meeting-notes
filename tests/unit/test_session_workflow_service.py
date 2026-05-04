@@ -318,6 +318,10 @@ def test_planned_session_creation_and_listing(local_tmp_dir) -> None:
         planning_notes="Focus on launch blockers.",
     )
     assert planned["session_type"] == "planned"
+    assert planned["planned_start_at"] == "2026-05-10T15:00:00+00:00"
+    listing = service.list_planned_sessions(limit=10)
+    assert len(listing["sessions"]) == 1
+    assert listing["sessions"][0]["capture_id"] == planned["capture_id"]
 
 
 def test_upcoming_meeting_context_can_create_session(local_tmp_dir) -> None:
@@ -345,10 +349,10 @@ def test_upcoming_meeting_context_can_create_session(local_tmp_dir) -> None:
     assert created["session_type"] == "planned"
     assert created["imported_title"] == "Design Sync"
     assert renamed["display_name"] == "Renamed by user"
-    assert planned["planned_start_at"] == "2026-05-10T15:00:00+00:00"
+    assert created["planned_start_at"] == "2026-05-08T14:00:00+00:00"
     listing = service.list_planned_sessions(limit=10)
     assert len(listing["sessions"]) == 1
-    assert listing["sessions"][0]["capture_id"] == planned["capture_id"]
+    assert listing["sessions"][0]["capture_id"] == created["capture_id"]
 
 
 def test_library_search_and_workflow_updates(local_tmp_dir) -> None:
