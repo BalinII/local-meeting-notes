@@ -86,6 +86,9 @@ export type SessionOverview = SessionLibraryEntry & {
   session_type?: "ad_hoc" | "planned";
   planned_start_at?: string | null;
   planning_notes?: string | null;
+  source_type?: "ad_hoc" | "planned" | "calendar_imported";
+  external_meeting_id?: string | null;
+  imported_title?: string | null;
   active_capture?: {
     capture_id?: string | null;
     status?: string | null;
@@ -195,6 +198,17 @@ export async function listPlannedSessions(limit = 20): Promise<SessionOverview[]
   if (!invoke) return [];
   const payload = await invoke<{ sessions: SessionOverview[] }>("list_planned_sessions", { limit });
   return payload.sessions || [];
+}
+export async function listUpcomingSessions(limit = 20): Promise<SessionOverview[]> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) return [];
+  const payload = await invoke<{ sessions: SessionOverview[] }>("list_upcoming_sessions", { limit });
+  return payload.sessions || [];
+}
+export async function createSessionFromUpcoming(input: { title: string; plannedStartAt?: string | null; externalMeetingId?: string | null }): Promise<SessionOverview> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) throw new Error("Upcoming-meeting session creation is available in Tauri desktop mode.");
+  return invoke<SessionOverview>("create_session_from_upcoming", input);
 }
 
 export async function startRecordingSession(captureId: string): Promise<SessionOverview> {

@@ -262,6 +262,7 @@ class SessionWorkflowService:
                     status="draft",
                     started_at=now,
                     session_type="ad_hoc",
+                    source_type="ad_hoc",
                     capture_id=capture_id,
                     created_at=now,
                     updated_at=now,
@@ -297,12 +298,57 @@ class SessionWorkflowService:
                     status="draft",
                     started_at=now,
                     session_type="planned",
+                    source_type="planned",
                     planned_start_at=_clean_text(planned_start_at),
                     planning_notes=_clean_text(planning_notes),
                     capture_id=capture_id,
                     created_at=now,
                     updated_at=now,
                     manual_title=True,
+                    keep_source_audio=True,
+                ),
+            )
+            connection.commit()
+            row = fetch_meeting_by_capture_id(connection, capture_id)
+        assert row is not None
+        return self._hydrate_session(dict(row))
+
+    def list_upcoming_sessions(self, limit: int = 20) -> dict[str, object]:
+        planned = self.list_planned_sessions(limit=limit).get("sessions", [])
+        upcoming = planned + [self._meeting_to_upcoming_entry(item) for item in self._mock_upcoming_meetings()]
+        upcoming.sort(key=lambda row: str(row.get("planned_start_at") or row.get("created_at") or ""))
+        safe_limit = max(1, min(int(limit), 100))
+        return {"sessions": upcoming[:safe_limit]}
+
+    def create_session_from_upcoming(self, meeting_context: dict[str, object]) -> dict[str, object]:
+        imported_title = _clean_text(str(meeting_context.get("title") or ""))
+        if not imported_title:
+            raise ValueError("Upcoming meeting title is required.")
+        planned_start_at = _clean_text(str(meeting_context.get("planned_start_at") or ""))
+        external_meeting_id = _clean_text(str(meeting_context.get("external_meeting_id") or ""))
+        metadata_json = meeting_context.get("imported_metadata_json")
+        bootstrap_database(self.config)
+        capture_id = f"capture-{uuid4().hex[:8]}"
+        now = _utc_iso()
+        with connection_context(self.config.database_path) as connection:
+            insert_meeting(
+                connection,
+                MeetingRecord(
+                    id=None,
+                    external_id=f"capture:{capture_id}",
+                    title=imported_title,
+                    status="draft",
+                    started_at=now,
+                    session_type="planned",
+                    source_type="calendar_imported",
+                    planned_start_at=planned_start_at,
+                    external_meeting_id=external_meeting_id,
+                    imported_title=imported_title,
+                    imported_metadata_json=str(metadata_json) if metadata_json else None,
+                    capture_id=capture_id,
+                    created_at=now,
+                    updated_at=now,
+                    manual_title=False,
                     keep_source_audio=True,
                 ),
             )
@@ -678,8 +724,12 @@ class SessionWorkflowService:
             "capture_id": row["capture_id"],
             "display_name": row["title"],
             "session_type": row.get("session_type") or "ad_hoc",
+            "source_type": row.get("source_type") or row.get("session_type") or "ad_hoc",
             "planned_start_at": row.get("planned_start_at"),
             "planning_notes": row.get("planning_notes"),
+            "external_meeting_id": row.get("external_meeting_id"),
+            "imported_title": row.get("imported_title"),
+            "imported_metadata_json": row.get("imported_metadata_json"),
             "lifecycle_state": row["status"],
             "created_at": row.get("created_at") or row["started_at"],
             "updated_at": row.get("updated_at") or row["started_at"],
@@ -699,6 +749,30 @@ class SessionWorkflowService:
             "last_error": row.get("last_error"),
             "audio_present": (self.config.audio_output_dir / str(row["capture_id"])).exists(),
             "active_capture": active_capture,
+        }
+
+    def _mock_upcoming_meetings(self) -> list[dict[str, str]]:
+        return [
+            {
+                "external_meeting_id": "local-mock-standup",
+                "title": "Engineering Standup",
+                "planned_start_at": "2026-05-04T16:00:00+00:00",
+                "imported_metadata_json": '{"provider":"mock_local","location":"Teams link unavailable in local mode"}',
+            }
+        ]
+
+    def _meeting_to_upcoming_entry(self, meeting: dict[str, str]) -> dict[str, object]:
+        return {
+            "capture_id": "",
+            "display_name": meeting["title"],
+            "session_type": "planned",
+            "source_type": "calendar_imported",
+            "planned_start_at": meeting.get("planned_start_at"),
+            "external_meeting_id": meeting.get("external_meeting_id"),
+            "imported_title": meeting.get("title"),
+            "imported_metadata_json": meeting.get("imported_metadata_json"),
+            "lifecycle_state": "draft",
+            "is_upcoming_placeholder": True,
         }
 
     def _hydrate_library_session(self, row: dict[str, object]) -> dict[str, object]:

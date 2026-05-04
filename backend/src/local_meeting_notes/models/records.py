@@ -13,8 +13,12 @@ class MeetingRecord:
     status: str
     started_at: str
     session_type: str = "ad_hoc"
+    source_type: str = "ad_hoc"
     planned_start_at: str | None = None
     planning_notes: str | None = None
+    external_meeting_id: str | None = None
+    imported_title: str | None = None
+    imported_metadata_json: str | None = None
     capture_id: str = ""
     ended_at: str | None = None
     created_at: str | None = None
