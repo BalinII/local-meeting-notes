@@ -26,6 +26,7 @@ from ..storage.repository import (
     insert_meeting,
     update_meeting_fields,
     update_workspace_item_status,
+    update_workspace_item_details,
     upsert_app_setting,
 )
 from ..summarizer.service import SummarizerService
@@ -210,6 +211,32 @@ class SessionWorkflowService:
                 item_id=item_id,
                 workflow_status=workflow_status,
                 reviewed_at=reviewed_at,
+            )
+            connection.commit()
+        if row is None:
+            raise ValueError(f"No {item_type} found with id {item_id}.")
+        return _hydrate_workspace_item(dict(row))
+
+
+    def update_action_details(
+        self,
+        *,
+        item_type: str,
+        item_id: int,
+        due_at: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, object]:
+        if item_type not in {"action", "follow_up"}:
+            raise ValueError("Only action and follow_up items support details updates.")
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            row = update_workspace_item_details(
+                connection,
+                item_type=item_type,
+                item_id=item_id,
+                due_at=_clean_text(due_at),
+                notes=_clean_text(notes),
+                reviewed_at=_utc_iso(),
             )
             connection.commit()
         if row is None:
@@ -836,6 +863,10 @@ def _hydrate_workspace_item(row: dict[str, object]) -> dict[str, object]:
         "effective_owner_name": reviewed_owner_name or row.get("owner_name"),
         "workflow_state": _compact_workflow_state(row.get("workflow_state")),
         "review_status": row.get("review_status") or "generated",
+        "due_at": row.get("due_at"),
+        "notes": row.get("notes"),
+        "carry_source_capture_id": row.get("carry_source_capture_id"),
+        "carry_count": int(row.get("carry_count") or 0),
         "reviewed_at": row.get("reviewed_at"),
         "last_updated_at": last_updated_at,
         "evidence_snippet": row.get("evidence_snippet"),
@@ -874,6 +905,8 @@ def _normalize_action_filter(value: str | None) -> str:
         "carry-forward": "carried-forward",
         "carried-forward": "carried-forward",
         "dismissed": "dismissed",
+        "overdue": "overdue",
+        "due-soon": "due-soon",
     }
     return aliases.get(filter_value, "active")
 
@@ -888,6 +921,14 @@ def _filter_action_workspace_items(
         return [item for item in items if item.get("workflow_state") in {"open", "carried_forward"}]
     if normalized == "carried-forward":
         return [item for item in items if item.get("workflow_state") == "carried_forward"]
+    if normalized == "overdue":
+        now_iso = _utc_now().isoformat()
+        return [item for item in items if item.get("due_at") and str(item["due_at"]) < now_iso and item.get("workflow_state") in {"open", "carried_forward"}]
+    if normalized == "due-soon":
+        now = _utc_now()
+        soon = (now + timedelta(days=3)).isoformat()
+        now_iso = now.isoformat()
+        return [item for item in items if item.get("due_at") and now_iso <= str(item["due_at"]) <= soon and item.get("workflow_state") in {"open", "carried_forward"}]
     return [item for item in items if item.get("workflow_state") == normalized]
 
 

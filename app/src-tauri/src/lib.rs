@@ -229,9 +229,9 @@ fn list_action_tracker_items(limit: Option<i64>, filter: Option<String>, sort: O
 }
 
 #[tauri::command]
-fn update_action_workflow(item_type: String, item_id: i64, workflow_status: String) -> Result<serde_json::Value, String> {
+fn update_action_workflow(item_type: String, item_id: i64, workflow_status: String, due_at: Option<String>, notes: Option<String>) -> Result<serde_json::Value, String> {
     let item_id_arg = item_id.to_string();
-    run_backend_json(&[
+    let mut args = vec![
         "actions",
         "update-workflow",
         "--item-type",
@@ -240,7 +240,16 @@ fn update_action_workflow(item_type: String, item_id: i64, workflow_status: Stri
         item_id_arg.as_str(),
         "--workflow-status",
         workflow_status.as_str(),
-    ])
+    ];
+    if let Some(value) = due_at.as_deref() {
+        args.push("--due-at");
+        args.push(value);
+    }
+    if let Some(value) = notes.as_deref() {
+        args.push("--notes");
+        args.push(value);
+    }
+    run_backend_json(&args)
 }
 
 #[tauri::command]

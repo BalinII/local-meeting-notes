@@ -106,6 +106,10 @@ SCHEMA_STATEMENTS = (
         reviewed_description TEXT,
         reviewed_owner_name TEXT,
         reviewed_at TEXT,
+        due_at TEXT,
+        notes TEXT,
+        carry_source_capture_id TEXT,
+        carry_count INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,
@@ -143,6 +147,10 @@ SCHEMA_STATEMENTS = (
         provider_name TEXT NOT NULL DEFAULT 'heuristic',
         model_name TEXT,
         generated_at TEXT,
+        due_at TEXT,
+        notes TEXT,
+        carry_source_capture_id TEXT,
+        carry_count INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (meeting_id) REFERENCES meetings (id)
     )
     """,

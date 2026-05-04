@@ -194,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     actions_workspace.add_argument("--limit", type=int, default=200)
     actions_workspace.add_argument(
         "--filter",
-        choices=("active", "all", "open", "done", "carried-forward", "dismissed"),
+        choices=("active", "all", "open", "done", "carried-forward", "dismissed", "overdue", "due-soon"),
         default="active",
     )
     actions_workspace.add_argument(
@@ -206,6 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
     actions_update.add_argument("--item-type", choices=("action", "follow_up"), required=True)
     actions_update.add_argument("--item-id", type=int, required=True)
     actions_update.add_argument("--workflow-status", choices=("open", "done", "dismissed", "carried_forward"), required=True)
+    actions_update.add_argument("--due-at")
+    actions_update.add_argument("--notes")
 
     memory_parser = subparsers.add_parser("memory", help="Cross-session memory views.")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
@@ -913,7 +915,7 @@ def run_actions_workspace(limit: int, workflow_filter: str = "active", sort: str
     return 0
 
 
-def run_actions_update_workflow(item_type: str, item_id: int, workflow_status: str) -> int:
+def run_actions_update_workflow(item_type: str, item_id: int, workflow_status: str, due_at: str | None = None, notes: str | None = None) -> int:
     service = _get_session_workflow_service()
     try:
         payload = service.update_action_workflow_state(
@@ -921,6 +923,8 @@ def run_actions_update_workflow(item_type: str, item_id: int, workflow_status: s
             item_id=item_id,
             workflow_status=workflow_status,
         )
+        if due_at is not None or notes is not None:
+            payload = service.update_action_details(item_type=item_type, item_id=item_id, due_at=due_at, notes=notes)
     except ValueError as exc:
         print(str(exc))
         return 1
@@ -1030,7 +1034,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "actions" and args.actions_command == "workspace":
         return run_actions_workspace(args.limit, args.filter, args.sort)
     if args.command == "actions" and args.actions_command == "update-workflow":
-        return run_actions_update_workflow(args.item_type, args.item_id, args.workflow_status)
+        return run_actions_update_workflow(args.item_type, args.item_id, args.workflow_status, args.due_at, args.notes)
     if args.command == "memory" and args.memory_command == "list":
         return run_memory_list(args.item_type, args.limit)
     if args.command == "llm" and args.llm_command == "check":

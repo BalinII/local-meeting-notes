@@ -610,6 +610,8 @@ export function AppShell() {
                 <option value="done">Done</option>
                 <option value="carried-forward">Carried forward</option>
                 <option value="dismissed">Dismissed</option>
+                <option value="overdue">Overdue</option>
+                <option value="due-soon">Due soon</option>
               </select>
             </label>
             <label>
@@ -654,6 +656,8 @@ export function AppShell() {
                             <div>
                               <strong>{item.effective_description}</strong>
                               <p>{item.source_display_name} · {item.capture_id} · Owner: {item.effective_owner_name || "Unknown"}</p>
+                              <p className="muted">Due: {formatDate(item.due_at)} · Carry count: {item.carry_count || 0}</p>
+                              {item.notes ? <p className="muted">Notes: {item.notes}</p> : null}
                             </div>
                             <button className="secondary-button" onClick={() => void loadCapture(item.capture_id)}>Open Session</button>
                           </div>
