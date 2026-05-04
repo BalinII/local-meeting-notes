@@ -118,7 +118,7 @@ def _record_source(
                 warning = str(source_health["warning"])
 
             if first_frame_monotonic is not None and last_frame_monotonic is not None:
-                if (last_frame_monotonic - first_frame_monotonic) >= silent_warning_seconds and is_silent:
+                if (time.monotonic() - first_frame_monotonic) >= silent_warning_seconds and is_silent:
                     warning = f"No meaningful {source_name} audio detected recently"
             if last_frame_monotonic is None and source_health.get("stream_open"):
                 warning = f"{source_name.capitalize()} stream opened but no frames received"

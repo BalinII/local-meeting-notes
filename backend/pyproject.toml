@@ -22,6 +22,9 @@ local-meeting-notes = "local_meeting_notes.app:main"
 
 [project.optional-dependencies]
 dev = [
+  "pytest-cov>=5.0",
+  "pytest-timeout>=2.3",
+  "pytest-xdist>=3.6",
   "pytest>=8.0",
   "ruff>=0.5",
 ]
@@ -35,7 +38,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["../tests"]
 pythonpath = ["src"]
-addopts = "--basetemp=backend/data/tmp/pytest"
+addopts = "--strict-config --strict-markers -p no:cacheprovider"
 
 [tool.ruff]
 line-length = 100

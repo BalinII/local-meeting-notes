@@ -51,7 +51,7 @@ def insert_meeting(connection: sqlite3.Connection, meeting: MeetingRecord) -> in
             latest_model_name,
             has_reviewed_items
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             meeting.external_id,
@@ -335,10 +335,6 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 actions.due_at AS due_at,
                 actions.notes AS notes,
                 actions.carry_source_capture_id AS carry_source_capture_id,
-                actions.carry_count AS carry_count,
-                actions.due_at AS due_at,
-                actions.notes AS notes,
-                actions.carry_source_capture_id AS carry_source_capture_id,
                 actions.carry_count AS carry_count
             FROM actions
             INNER JOIN meetings ON meetings.id = actions.meeting_id
@@ -365,7 +361,11 @@ def fetch_cross_session_action_items(connection: sqlite3.Connection, limit: int 
                 decisions.review_status AS review_status,
                 decisions.reviewed_description AS reviewed_description,
                 decisions.reviewed_owner_name AS reviewed_owner_name,
-                decisions.reviewed_at AS reviewed_at
+                decisions.reviewed_at AS reviewed_at,
+                NULL AS due_at,
+                NULL AS notes,
+                NULL AS carry_source_capture_id,
+                0 AS carry_count
             FROM decisions
             INNER JOIN meetings ON meetings.id = decisions.meeting_id
             WHERE decisions.review_status <> 'rejected'

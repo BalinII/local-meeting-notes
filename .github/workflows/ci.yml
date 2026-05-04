@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  backend-test:
+    name: Backend tests
+    runs-on: windows-latest
+    env:
+      PYTHONPATH: backend/src
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "backend[dev]"
+
+      - name: Run pytest
+        run: python -m pytest tests --timeout=120 --cov=local_meeting_notes --cov-report=term-missing
+
+  frontend-test:
+    name: Frontend build and smoke tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend smoke tests
+        run: npm run test:smoke
+
+  tauri-check:
+    name: Tauri cargo check
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Check Tauri shell
+        run: cargo check
