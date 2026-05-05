@@ -202,17 +202,19 @@ def _content_state_for_meeting(meeting: Any) -> str:
 def render_markdown(payload: dict[str, Any]) -> str:
     export_mode = str(payload.get("metadata", {}).get("export_mode") or "final_notes")
     display_name = _display_name(payload)
-    lines = [
-        f"# {display_name}",
-        "",
-        "## Export Metadata",
-        "",
-        f"- Capture ID: `{payload['capture_id']}`",
-        f"- Export mode: {export_mode}",
-        f"- Content preference: {payload['metadata'].get('content_preference', 'reviewed_first')}",
-        f"- Exported: {payload['exported_at']}",
-        f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
-    ]
+    lines = [f"# {display_name}", ""]
+    if export_mode == "final_notes":
+        lines.extend([f"_Final Notes · Exported {payload['exported_at']}_", ""])
+    else:
+        lines.extend([
+            "## Export Metadata",
+            "",
+            f"- Capture ID: `{payload['capture_id']}`",
+            f"- Export mode: {export_mode}",
+            f"- Content preference: {payload['metadata'].get('content_preference', 'reviewed_first')}",
+            f"- Exported: {payload['exported_at']}",
+            f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
+        ])
     model_names = _provider_model_names(payload)
     if model_names:
         lines.append(f"- Models: {', '.join(model_names)}")

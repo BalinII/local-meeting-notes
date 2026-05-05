@@ -95,6 +95,19 @@ export type SessionOverview = SessionLibraryEntry & {
     last_error?: string | null;
   } | null;
 };
+export type SessionBriefing = {
+  capture_id: string;
+  display_name: string;
+  related_session_ids: string[];
+  briefing: {
+    open_actions: ActionTrackerItem[];
+    carried_forward_items: ActionTrackerItem[];
+    recent_decisions: ExtractedOutput[];
+    active_blockers_risks: ExtractedOutput[];
+    open_questions: ExtractedOutput[];
+    prior_executive_summary?: string | null;
+  };
+};
 export type CalendarStatus = {
   available: boolean;
   provider?: string | null;
@@ -177,12 +190,16 @@ export async function listRecentCaptures(limit = 12): Promise<RecentCapture[]> {
   return invoke<RecentCapture[]>("list_recent_captures", { limit });
 }
 
-export async function exportReview(captureId: string, format: "markdown" | "html" | "json") {
+export async function exportReview(
+  captureId: string,
+  format: "markdown" | "html" | "json",
+  mode?: "final_notes" | "full_detail",
+) {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) {
     return `Demo mode: export ${format} for ${captureId}`;
   }
-  return invoke<string>("export_capture", { captureId, format });
+  return invoke<string>("export_capture", { captureId, format, mode });
 }
 
 export async function listSessionLibrary(sort: LibrarySort = "newest", filter: LibraryFilter = "all"): Promise<SessionLibraryEntry[]> {
@@ -228,6 +245,18 @@ export async function startRecordingSession(captureId: string): Promise<SessionO
     includeLoopback: false,
     includeMicrophone: true,
   });
+}
+export async function getSessionBriefing(captureId: string): Promise<SessionBriefing> {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return {
+      capture_id: captureId,
+      display_name: "Demo session",
+      related_session_ids: [],
+      briefing: { open_actions: [], carried_forward_items: [], recent_decisions: [], active_blockers_risks: [], open_questions: [], prior_executive_summary: null },
+    };
+  }
+  return invoke<SessionBriefing>("get_session_briefing", { captureId });
 }
 
 export async function pauseRecordingSession(captureId: string): Promise<SessionOverview> {

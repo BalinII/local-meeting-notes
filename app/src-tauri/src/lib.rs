@@ -54,15 +54,20 @@ fn session_search(query: String, limit: Option<i64>, scope: Option<String>) -> R
 }
 
 #[tauri::command]
-fn export_capture(capture_id: String, format: String) -> Result<String, String> {
-    let output = run_backend(&[
+fn export_capture(capture_id: String, format: String, mode: Option<String>) -> Result<String, String> {
+    let mut args = vec![
         "export",
         "run",
         "--capture-id",
         capture_id.as_str(),
         "--format",
         format.as_str(),
-    ])?;
+    ];
+    if let Some(mode_value) = mode.as_deref() {
+        args.push("--mode");
+        args.push(mode_value);
+    }
+    let output = run_backend(&args)?;
     Ok(output.trim().to_string())
 }
 
@@ -120,6 +125,10 @@ fn create_session_from_upcoming(title: String, planned_start_at: Option<String>,
 #[tauri::command]
 fn get_session(capture_id: String) -> Result<serde_json::Value, String> {
     run_backend_json(&["session", "get", "--capture-id", capture_id.as_str()])
+}
+#[tauri::command]
+fn get_session_briefing(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "briefing", "--capture-id", capture_id.as_str()])
 }
 
 #[tauri::command]
@@ -337,6 +346,7 @@ pub fn run() {
             list_upcoming_sessions,
             create_session_from_upcoming,
             get_session,
+            get_session_briefing,
             rename_session,
             start_session,
             pause_session,

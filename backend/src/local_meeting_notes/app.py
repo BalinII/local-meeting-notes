@@ -75,6 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
     session_upcoming_create.add_argument("--external-meeting-id")
     session_get = session_subparsers.add_parser("get", help="Get a persisted recording session.")
     session_get.add_argument("--capture-id", required=True)
+    session_briefing = session_subparsers.add_parser("briefing", help="Get lightweight pre-meeting briefing context.")
+    session_briefing.add_argument("--capture-id", required=True)
     session_rename = session_subparsers.add_parser("rename", help="Update the display name for a session.")
     session_rename.add_argument("--capture-id", required=True)
     session_rename.add_argument("--title", required=True)
@@ -244,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_run = export_subparsers.add_parser("run", help="Export a capture to markdown, HTML, or JSON.")
     export_run.add_argument("--capture-id", required=True)
     export_run.add_argument("--format", choices=tuple(sorted(EXPORT_FORMATS)), required=True)
+    export_run.add_argument("--mode", choices=("final_notes", "full_detail"))
 
     return parser
 
@@ -692,10 +695,10 @@ def run_review_update_item(
     return 0
 
 
-def run_export_capture(capture_id: str, export_format: str) -> int:
+def run_export_capture(capture_id: str, export_format: str, export_mode: str | None = None) -> int:
     service = _get_session_workflow_service()
     try:
-        output_path = service.export_session(capture_id, export_format)
+        output_path = service.export_session(capture_id, export_format, export_mode=export_mode)
     except ValueError as exc:
         print(str(exc))
         return 1
@@ -762,6 +765,12 @@ def run_session_get(capture_id: str) -> int:
         print(str(exc))
         return 1
     print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def run_session_briefing(capture_id: str) -> int:
+    service = _get_session_workflow_service()
+    print(json.dumps(service.session_briefing(capture_id), ensure_ascii=False))
     return 0
 
 
@@ -966,6 +975,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_session_upcoming_create(args.title, planned_start_at=args.planned_start_at, external_meeting_id=args.external_meeting_id)
     if args.command == "session" and args.session_command == "get":
         return run_session_get(args.capture_id)
+    if args.command == "session" and args.session_command == "briefing":
+        return run_session_briefing(args.capture_id)
     if args.command == "session" and args.session_command == "rename":
         return run_session_rename(args.capture_id, args.title)
     if args.command == "session" and args.session_command == "record-start":
@@ -1052,7 +1063,7 @@ def main(argv: list[str] | None = None) -> int:
             owner_name=args.owner_name,
         )
     if args.command == "export" and args.export_command == "run":
-        return run_export_capture(args.capture_id, args.format)
+        return run_export_capture(args.capture_id, args.format, args.mode)
 
     parser.error("Unsupported command.")
     return 2

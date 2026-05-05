@@ -5,6 +5,7 @@ import {
   createSessionFromUpcoming,
   exportReview,
   finaliseCapture,
+  getSessionBriefing,
   listGlobalActions,
   listMemoryItems,
   listRecentCaptures,
@@ -31,6 +32,7 @@ import {
   type SearchSessionGroup,
   type SessionLibraryEntry,
   type SessionOverview,
+  type SessionBriefing,
   type SummaryOutput,
   type CalendarStatus,
 } from "../lib/reviewApi";
@@ -73,6 +75,7 @@ export function AppShell() {
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [plannedTitle, setPlannedTitle] = useState("");
   const [plannedStartAt, setPlannedStartAt] = useState("");
+  const [sessionBriefing, setSessionBriefing] = useState<SessionBriefing | null>(null);
 
   useEffect(() => {
     void refreshAll();
@@ -134,6 +137,7 @@ export function AppShell() {
     setIsLoading(true);
     try {
       const nextPayload = await loadReviewPayload(trimmed);
+      setSessionBriefing(await getSessionBriefing(trimmed));
       setPayload(nextPayload);
       setCaptureId(trimmed);
       setSelectedCaptureId(trimmed);
@@ -163,9 +167,9 @@ export function AppShell() {
     }
   }
 
-  async function handleExport(format: "markdown" | "html" | "json") {
+  async function handleExport(format: "markdown" | "html" | "json", mode?: "final_notes" | "full_detail") {
     if (!payload) return;
-    const message = await exportReview(payload.capture_id, format);
+    const message = await exportReview(payload.capture_id, format, mode);
     setStatus(message);
     await refreshAll();
   }
@@ -258,6 +262,7 @@ export function AppShell() {
     setStatus("Starting recording from planned session...");
     try {
       const started = await startRecordingSession(captureIdToStart);
+      setSessionBriefing(await getSessionBriefing(captureIdToStart));
       setRecordingSession(started);
       setSelectedCaptureId(started.capture_id);
       setCaptureId(started.capture_id);
@@ -463,11 +468,19 @@ export function AppShell() {
                 <h2>{payload.metadata.display_name || payload.capture_id}</h2>
                 <p>{payload.capture_id}</p>
                 <div className="export-actions">
-                  <button onClick={() => void handleExport("markdown")}>Export Final Notes (Markdown)</button>
-                  <button onClick={() => void handleExport("html")}>Export Final Notes (HTML)</button>
-                  <button onClick={() => void handleExport("json")}>Export Full Detail (JSON)</button>
+                  <button onClick={() => void handleExport("markdown", "final_notes")}>Export Final Notes (Markdown)</button>
+                  <button onClick={() => void handleExport("html", "final_notes")}>Export Final Notes (HTML)</button>
+                  <button onClick={() => void handleExport("json", "full_detail")}>Export Full Detail (JSON)</button>
                   <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
                 </div>
+                {sessionBriefing ? (
+                  <div style={{ marginTop: 12 }}>
+                    <h3 style={{ marginBottom: 6 }}>Before you start</h3>
+                    {sessionBriefing.briefing.prior_executive_summary ? <p className="muted">{sessionBriefing.briefing.prior_executive_summary}</p> : null}
+                    <p className="muted">Related sessions: {sessionBriefing.related_session_ids.length}</p>
+                    <p className="muted">Open actions: {sessionBriefing.briefing.open_actions.length} · Carried forward: {sessionBriefing.briefing.carried_forward_items.length}</p>
+                  </div>
+                ) : null}
               </aside>
               <section className="review-content">
                 <SummaryPanel summaries={payload.summaries} />
