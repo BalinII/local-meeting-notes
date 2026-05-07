@@ -286,6 +286,7 @@ def test_recent_captures_include_review_metadata(local_tmp_dir) -> None:
 
     captures_by_id = {item["capture_id"]: item for item in recent}
     assert set(captures_by_id) == {"capture-newer", "capture-older"}
+    assert captures_by_id["capture-newer"]["display_name"] == "Capture Newer"
     assert captures_by_id["capture-newer"]["has_reviewed_items"] is True
     assert captures_by_id["capture-newer"]["latest_generated_at"] == "2026-04-23T00:02:00+00:00"
     assert captures_by_id["capture-newer"]["latest_reviewed_at"] is not None

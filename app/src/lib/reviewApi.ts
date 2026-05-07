@@ -53,6 +53,7 @@ export type ReviewPayload = {
 
 export type RecentCapture = {
   capture_id: string;
+  display_name?: string | null;
   created_at?: string | null;
   latest_generated_at?: string | null;
   latest_reviewed_at?: string | null;
@@ -165,6 +166,7 @@ export async function listRecentCaptures(limit = 12): Promise<RecentCapture[]> {
     return [
       {
         capture_id: "capture-demo-001",
+        display_name: "Demo Capture",
         created_at: new Date().toISOString(),
         latest_generated_at: new Date().toISOString(),
         latest_reviewed_at: null,
