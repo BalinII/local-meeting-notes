@@ -104,6 +104,28 @@ textarea {
   margin-top: 10px;
 }
 
+.creation-paths {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 1040px;
+}
+
+.creation-path {
+  border: 1px solid rgba(23, 32, 51, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.creation-path h2 {
+  font-size: 1.12rem;
+  line-height: 1.25;
+  margin: 0 0 6px;
+}
+
 .capture-picker {
   border: 1px solid rgba(23, 32, 51, 0.08);
   border-radius: 20px;
@@ -464,6 +486,11 @@ textarea {
   border-radius: 18px;
   background: #ffffff;
   padding: 18px;
+}
+
+.summary-low-confidence {
+  border-left: 4px solid #b7791f;
+  background: #fffdf6;
 }
 
 .item-card.review-generated {
@@ -878,6 +905,10 @@ textarea {
   }
 
   .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .creation-paths {
     grid-template-columns: 1fr;
   }
 }

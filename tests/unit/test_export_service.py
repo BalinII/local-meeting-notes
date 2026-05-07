@@ -169,6 +169,40 @@ def test_export_payload_groups_outputs_for_review(local_tmp_dir) -> None:
     assert payload["open_questions"][0]["description"] == "Which export format should be shared by default?"
 
 
+def test_low_quality_summary_is_downgraded_in_review_payload(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    with connection_context(config.database_path) as connection:
+        meeting_id = ensure_meeting_for_capture(connection, "capture-garbled")
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=meeting_id,
+                capture_id="capture-garbled",
+                title="Executive Summary",
+                summary_type="executive",
+                content=(
+                    "The risk of joule source processing is still constrained, so what can find "
+                    "only remains the surface to fault, open questions should focus on cross procession, work for them."
+                ),
+                evidence_snippet="risk of joule source processing is still constrained what can find",
+                provider_name="local_llm",
+                model_name="llama3.1:8b",
+            ),
+        )
+        connection.commit()
+
+    payload = ExportService(config).build_review_payload("capture-garbled")
+
+    executive = payload["summaries"][0]
+    assert executive["summary_type"] == "executive"
+    assert executive["quality_status"] == "low_confidence"
+    assert "Review the transcript" in executive["content"]
+    assert "surface to fault" not in executive["content"]
+    assert payload["metadata"]["low_confidence_summary_count"] >= 1
+
+
 def test_export_service_renders_markdown_html_and_json(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     _seed_outputs(config)

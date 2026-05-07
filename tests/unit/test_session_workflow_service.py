@@ -6,6 +6,7 @@ from pathlib import Path
 from local_meeting_notes.config import load_config
 from local_meeting_notes.models import ActionRecord, DecisionRecord, FollowUpRecord, SummaryRecord, TranscriptSegmentRecord
 from local_meeting_notes.session_workflow.service import SessionWorkflowService
+from local_meeting_notes.export_service.service import ExportService
 from local_meeting_notes.storage.database import bootstrap_database, connection_context
 from local_meeting_notes.storage.repository import (
     insert_action,
@@ -87,7 +88,8 @@ class FakeNoopService:
 
 
 class FakeExportService:
-    def build_review_payload(self, capture_id: str) -> dict[str, object]:
+    def build_review_payload(self, capture_id: str, export_mode: str = "full_detail") -> dict[str, object]:
+        del export_mode
         return {
             "capture_id": capture_id,
             "exported_at": "2026-04-25T00:00:00+00:00",
@@ -842,3 +844,37 @@ def test_manual_rename_remains_authoritative_for_imported_session(local_tmp_dir)
 
     assert renamed["display_name"] == "Manual Override"
     assert renamed["imported_title"] == "Imported Title"
+
+
+def test_session_briefing_does_not_reuse_low_quality_summary(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=ExportService(config),
+    )
+    created = service.create_session("Bad Prior Summary")
+    with connection_context(config.database_path) as connection:
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=int(created["id"]),
+                capture_id=str(created["capture_id"]),
+                title="Executive Summary",
+                summary_type="executive",
+                content="What can find only remains the surface to fault and cross procession work for them.",
+                evidence_snippet="what can find only remains",
+                provider_name="local_llm",
+            ),
+        )
+        connection.commit()
+
+    briefing = service.session_briefing(str(created["capture_id"]))
+
+    assert briefing["briefing"]["prior_executive_summary"] is None

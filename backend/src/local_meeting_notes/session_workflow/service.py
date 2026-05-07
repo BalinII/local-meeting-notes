@@ -417,6 +417,41 @@ class SessionWorkflowService:
             raise ValueError(f"No session found for capture '{capture_id}'.")
         return self._hydrate_session(dict(row))
 
+    def session_briefing(self, capture_id: str) -> dict[str, object]:
+        bootstrap_database(self.config)
+        with connection_context(self.config.database_path) as connection:
+            row = self._require_session(connection, capture_id)
+            current = dict(row)
+            meetings = [dict(item) for item in fetch_recent_meetings(connection, limit=300)]
+            workspace = [_hydrate_workspace_item(dict(item)) for item in fetch_cross_session_action_items(connection, limit=1000)]
+            summary_payload = self.export_service.build_review_payload(capture_id, export_mode="final_notes")
+
+        related_ids = _related_capture_ids(current, meetings)
+        related_workspace = [item for item in workspace if str(item.get("capture_id")) in related_ids and str(item.get("capture_id")) != capture_id]
+        open_actions = [item for item in related_workspace if item.get("item_type") == "action" and item.get("workflow_state") in {"open", "carried_forward"}][:6]
+        carried = [item for item in related_workspace if item.get("carry_source_capture_id")][:6]
+        blockers = [item for item in summary_payload.get("blockers_risks", []) if item.get("review_status") != "rejected"][:5]
+        questions = [item for item in summary_payload.get("open_questions", []) if item.get("review_status") != "rejected"][:5]
+        decisions = [item for item in summary_payload.get("decisions", []) if item.get("review_status") in {"accepted", "edited"}][:5]
+        executive = ""
+        for summary in summary_payload.get("summaries", []):
+            if str(summary.get("summary_type")) == "executive" and summary.get("quality_status") != "low_confidence":
+                executive = str(summary.get("content") or "").strip()
+                break
+        return {
+            "capture_id": capture_id,
+            "display_name": current.get("title") or capture_id,
+            "related_session_ids": sorted(related_ids),
+            "briefing": {
+                "open_actions": open_actions,
+                "carried_forward_items": carried,
+                "recent_decisions": decisions,
+                "active_blockers_risks": blockers,
+                "open_questions": questions,
+                "prior_executive_summary": executive[:420] if executive else None,
+            },
+        }
+
     def update_session_display_name(self, capture_id: str, display_name: str) -> dict[str, object]:
         cleaned = _clean_text(display_name)
         if not cleaned:
@@ -590,8 +625,8 @@ class SessionWorkflowService:
         session["active_capture"] = capture_state if capture_state.get("capture_id") == capture_id else None
         return session
 
-    def export_session(self, capture_id: str, export_format: str) -> Path:
-        output_path = self.export_service.export_capture(capture_id, export_format)
+    def export_session(self, capture_id: str, export_format: str, export_mode: str | None = None) -> Path:
+        output_path = self.export_service.export_capture(capture_id, export_format, export_mode=export_mode)
         bootstrap_database(self.config)
         with connection_context(self.config.database_path) as connection:
             row = self._require_session(connection, capture_id)
@@ -1062,6 +1097,25 @@ def _search_scopes_for_filter(value: str | None) -> list[str] | None:
 
 def _normalize_search_text(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _related_capture_ids(current: dict[str, object], meetings: list[dict[str, object]]) -> set[str]:
+    current_id = str(current.get("capture_id") or "")
+    current_title = _normalize_search_text(str(current.get("title") or ""))
+    current_external = str(current.get("external_meeting_id") or "").strip()
+    related: set[str] = {current_id}
+    for meeting in meetings:
+        capture_id = str(meeting.get("capture_id") or "")
+        if not capture_id:
+            continue
+        title = _normalize_search_text(str(meeting.get("title") or ""))
+        external_id = str(meeting.get("external_meeting_id") or "").strip()
+        if current_external and external_id and external_id == current_external:
+            related.add(capture_id)
+            continue
+        if current_title and title and title == current_title:
+            related.add(capture_id)
+    return related
 
 
 def _display_search_field(field_name: object, item_type: object) -> str:

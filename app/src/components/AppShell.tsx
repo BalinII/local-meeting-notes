@@ -5,6 +5,7 @@ import {
   createSessionFromUpcoming,
   exportReview,
   finaliseCapture,
+  getSessionBriefing,
   listGlobalActions,
   listMemoryItems,
   listRecentCaptures,
@@ -31,6 +32,7 @@ import {
   type SearchSessionGroup,
   type SessionLibraryEntry,
   type SessionOverview,
+  type SessionBriefing,
   type SummaryOutput,
   type CalendarStatus,
 } from "../lib/reviewApi";
@@ -75,6 +77,7 @@ export function AppShell() {
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
   const [plannedTitle, setPlannedTitle] = useState("");
   const [plannedStartAt, setPlannedStartAt] = useState("");
+  const [sessionBriefing, setSessionBriefing] = useState<SessionBriefing | null>(null);
 
   useEffect(() => {
     void refreshAll();
@@ -148,6 +151,7 @@ export function AppShell() {
     try {
       const nextPayload = await loadReviewPayload(trimmed);
       const nextDisplayName = reviewDisplayName(nextPayload);
+      setSessionBriefing(await getSessionBriefing(nextPayload.capture_id));
       setPayload(nextPayload);
       setCaptureId(nextPayload.capture_id);
       setSelectedCaptureId(nextPayload.capture_id);
@@ -178,9 +182,9 @@ export function AppShell() {
     }
   }
 
-  async function handleExport(format: "markdown" | "html" | "json") {
+  async function handleExport(format: "markdown" | "html" | "json", mode?: "final_notes" | "full_detail") {
     if (!payload) return;
-    const message = await exportReview(payload.capture_id, format);
+    const message = await exportReview(payload.capture_id, format, mode);
     setStatus(message);
     await refreshAll();
   }
@@ -236,7 +240,7 @@ export function AppShell() {
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshLibrary();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = userFacingError(error);
       setStatus(message);
       setRecordingSession((current) => current ? { ...current, lifecycle_state: "processing_failed", last_error: message } : current);
     } finally {
@@ -245,11 +249,19 @@ export function AppShell() {
   }
   async function handleCreatePlannedSession() {
     if (!plannedTitle.trim()) return;
-    const created = await createPlannedSession({ title: plannedTitle.trim(), plannedStartAt: plannedStartAt || null });
-    setStatus(`Planned session created: ${created.display_name}.`);
-    setPlannedTitle("");
-    setPlannedStartAt("");
-    await refreshAll();
+    setIsRecordingBusy(true);
+    setStatus("Saving planned session for later recording...");
+    try {
+      const created = await createPlannedSession({ title: plannedTitle.trim(), plannedStartAt: plannedStartAt || null });
+      setStatus(`Planned session created: ${created.display_name}.`);
+      setPlannedTitle("");
+      setPlannedStartAt("");
+      await refreshAll();
+    } catch (error) {
+      setStatus(userFacingError(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
   }
 
   async function handlePauseRecording() {
@@ -263,7 +275,7 @@ export function AppShell() {
       setStatus(`Paused ${paused.display_name || paused.capture_id}.`);
       await refreshLibrary();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      setStatus(userFacingError(error));
     } finally {
       setIsRecordingBusy(false);
     }
@@ -273,24 +285,35 @@ export function AppShell() {
     setStatus("Starting recording from planned session...");
     try {
       const started = await startRecordingSession(captureIdToStart);
+      setSessionBriefing(await getSessionBriefing(captureIdToStart));
       setRecordingSession(started);
       setSelectedCaptureId(started.capture_id);
       setCaptureId(started.capture_id);
       setPayload(null);
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshAll();
+    } catch (error) {
+      setStatus(userFacingError(error));
     } finally {
       setIsRecordingBusy(false);
     }
   }
   async function handleCreateFromUpcoming(session: SessionOverview) {
-    const created = await createSessionFromUpcoming({
-      title: session.display_name,
-      plannedStartAt: session.planned_start_at || null,
-      externalMeetingId: (session as SessionOverview & { external_meeting_id?: string }).external_meeting_id || null,
-    });
-    setStatus(`Created from upcoming context: ${created.display_name}.`);
-    await refreshAll();
+    setIsRecordingBusy(true);
+    setStatus("Creating a planned session from upcoming context...");
+    try {
+      const created = await createSessionFromUpcoming({
+        title: session.display_name,
+        plannedStartAt: session.planned_start_at || null,
+        externalMeetingId: (session as SessionOverview & { external_meeting_id?: string }).external_meeting_id || null,
+      });
+      setStatus(`Created from upcoming context: ${created.display_name}.`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(userFacingError(error));
+    } finally {
+      setIsRecordingBusy(false);
+    }
   }
 
   async function handleResumeRecording() {
@@ -304,7 +327,7 @@ export function AppShell() {
       setStatus(`Recording ${resumed.display_name || resumed.capture_id}.`);
       await refreshLibrary();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
+      setStatus(userFacingError(error));
     } finally {
       setIsRecordingBusy(false);
     }
@@ -332,11 +355,11 @@ export function AppShell() {
       if (stopped.lifecycle_state === "review_ready" || stopped.lifecycle_state === "reviewed" || stopped.lifecycle_state === "exported") {
         await loadCapture(stopped.capture_id);
       } else {
-        setStatus(stopped.last_error || `${stopped.display_name || stopped.capture_id} is ${stopped.lifecycle_state}.`);
+        setStatus(stopped.last_error ? userFacingError(stopped.last_error) : `${stopped.display_name || stopped.capture_id} is ${stopped.lifecycle_state}.`);
       }
     } catch (error) {
       window.clearTimeout(processingTimer);
-      const message = error instanceof Error ? error.message : String(error);
+      const message = userFacingError(error);
       setStatus(message);
       setRecordingSession((current) => current ? { ...current, lifecycle_state: "processing_failed", last_error: message } : current);
     } finally {
@@ -380,21 +403,37 @@ export function AppShell() {
           </div>
           <span className="status-pill subtle">{recordingConfidence.label}</span>
         </div>
-        <div className="capture-toolbar recording-name-row">
-          <input
-            aria-label="Meeting or call name"
-            placeholder="Meeting or call name"
-            value={newRecordingTitle}
-            onChange={(event) => setNewRecordingTitle(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") void handleNewRecording(); }}
-            disabled={isRecordingBusy}
-          />
-        </div>
-        <div className="capture-toolbar recording-name-row">
-          <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>Start Ad Hoc Recording</button>
-          <input placeholder="Planned session title" value={plannedTitle} onChange={(event) => setPlannedTitle(event.target.value)} />
-          <input type="datetime-local" value={plannedStartAt} onChange={(event) => setPlannedStartAt(event.target.value)} />
-          <button className="secondary-button" onClick={() => void handleCreatePlannedSession()} disabled={isRecordingBusy || !plannedTitle.trim()}>Create Planned Session</button>
+        <div className="creation-paths">
+          <section className="creation-path">
+            <div>
+              <p className="eyebrow">Record now</p>
+              <h2>Ad hoc recording</h2>
+              <p className="capture-row-meta">Use this when the call is already happening. It creates a session and starts local microphone capture immediately.</p>
+            </div>
+            <div className="capture-toolbar recording-name-row">
+              <input
+                aria-label="Ad hoc recording name"
+                placeholder="Optional recording name"
+                value={newRecordingTitle}
+                onChange={(event) => setNewRecordingTitle(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") void handleNewRecording(); }}
+                disabled={isRecordingBusy}
+              />
+              <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>Start Recording Now</button>
+            </div>
+          </section>
+          <section className="creation-path">
+            <div>
+              <p className="eyebrow">Prepare for later</p>
+              <h2>Planned session</h2>
+              <p className="capture-row-meta">Use this to name a future meeting before recording. It stays in Draft until you start it from the planned list.</p>
+            </div>
+            <div className="capture-toolbar recording-name-row">
+              <input aria-label="Planned session title" placeholder="Required planned session title" value={plannedTitle} onChange={(event) => setPlannedTitle(event.target.value)} disabled={isRecordingBusy} />
+              <input aria-label="Planned start time" type="datetime-local" value={plannedStartAt} onChange={(event) => setPlannedStartAt(event.target.value)} disabled={isRecordingBusy} />
+              <button className="secondary-button" onClick={() => void handleCreatePlannedSession()} disabled={isRecordingBusy || !plannedTitle.trim()}>Save Planned Session</button>
+            </div>
+          </section>
         </div>
         <div className="segmented-control">
           <button className="active" onClick={() => void handleNewRecording()} disabled={isRecordingBusy}>New Recording</button>
@@ -415,7 +454,7 @@ export function AppShell() {
               <span className="status-pill subtle">Local chunks</span>
             </div>
             <p className="recording-state-note">{recordingConfidence.detail}</p>
-            {recordingSession.last_error ? <p className="error-text">{recordingSession.last_error}</p> : null}
+            {recordingSession.last_error ? <p className="error-text">{userFacingError(recordingSession.last_error)}</p> : null}
             <div className="recording-controls">
               {(recordingSession.lifecycle_state === "recording" || recordingSession.lifecycle_state === "pausing") && (
                 <button className="secondary-button" onClick={() => void handlePauseRecording()} disabled={isRecordingBusy}>
@@ -500,11 +539,19 @@ export function AppShell() {
                   <h2>{currentReviewDisplayName}</h2>
                   <p>{captureIdLabel(payload.capture_id)}</p>
                   <div className="export-actions">
-                    <button onClick={() => void handleExport("markdown")}>Export Final Notes (Markdown)</button>
-                    <button onClick={() => void handleExport("html")}>Export Final Notes (HTML)</button>
-                    <button onClick={() => void handleExport("json")}>Export Full Detail (JSON)</button>
+                    <button onClick={() => void handleExport("markdown", "final_notes")}>Export Final Notes (Markdown)</button>
+                    <button onClick={() => void handleExport("html", "final_notes")}>Export Final Notes (HTML)</button>
+                    <button onClick={() => void handleExport("json", "full_detail")}>Export Full Detail (JSON)</button>
                     <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
                   </div>
+                  {sessionBriefing ? (
+                    <div style={{ marginTop: 12 }}>
+                      <h3 style={{ marginBottom: 6 }}>Before you start</h3>
+                      {sessionBriefing.briefing.prior_executive_summary ? <p className="muted">{sessionBriefing.briefing.prior_executive_summary}</p> : null}
+                      <p className="muted">Related sessions: {sessionBriefing.related_session_ids.length}</p>
+                      <p className="muted">Open actions: {sessionBriefing.briefing.open_actions.length} · Carried forward: {sessionBriefing.briefing.carried_forward_items.length}</p>
+                    </div>
+                  ) : null}
                 </aside>
                 <section className="review-content">
                   <SummaryPanel summaries={payload.summaries} />
@@ -583,7 +630,7 @@ export function AppShell() {
                     {(session.providers.length || session.models.length) ? (
                       <p className="capture-row-meta">{compactMetadata(session.providers, session.models)}</p>
                     ) : null}
-                    {session.last_error ? <p className="error-text">{session.last_error}</p> : null}
+                    {session.last_error ? <p className="error-text">{userFacingError(session.last_error)}</p> : null}
                   </article>
                 );
               })}
@@ -776,7 +823,19 @@ export function AppShell() {
 }
 
 function SummaryPanel({ summaries }: { summaries: SummaryOutput[] }) {
-  return <section className="panel">{summaries.map((summary) => <article className="note-card" key={summary.title}><h3>{summary.title}</h3><p>{summary.content}</p></article>)}</section>;
+  return (
+    <section className="panel">
+      {summaries.map((summary) => (
+        <article className={`note-card ${summary.quality_status === "low_confidence" ? "summary-low-confidence" : ""}`} key={summary.title}>
+          <h3>{summary.title}</h3>
+          {summary.quality_status === "low_confidence" ? (
+            <p className="error-text">Low confidence. Review the transcript before relying on this generated summary.</p>
+          ) : null}
+          <p>{summary.content}</p>
+        </article>
+      ))}
+    </section>
+  );
 }
 
 function ItemPanel({ title, items, showOwner = false, tone, onReviewItem }: { title: string; items: ExtractedOutput[]; showOwner?: boolean; tone?: "risk" | "question"; onReviewItem: (item: ExtractedOutput, reviewStatus: NonNullable<ExtractedOutput["review_status"]>, values?: { description?: string; ownerName?: string | null }) => Promise<void>; }) {
@@ -883,4 +942,15 @@ function highlightSnippet(snippet: string, query: string) {
       {snippet.slice(index + term.length)}
     </>
   );
+}
+
+function userFacingError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  const trimmed = raw.trim();
+  if (!trimmed) return "Something went wrong in the local app.";
+  if (trimmed.includes("Traceback (most recent call last)")) {
+    const finalLine = trimmed.split(/\r?\n/).reverse().find((line) => line.trim());
+    return finalLine ? `Local backend error: ${finalLine.trim()}` : "Local backend error. Check the backend logs for details.";
+  }
+  return trimmed;
 }
