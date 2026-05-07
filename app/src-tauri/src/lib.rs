@@ -324,7 +324,7 @@ fn run_backend(args: &[&str]) -> Result<String, String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Err(if stderr.is_empty() { stdout } else { stderr });
+        return Err(clean_backend_error(if stderr.is_empty() { &stdout } else { &stderr }));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -332,6 +332,20 @@ fn run_backend(args: &[&str]) -> Result<String, String> {
 fn run_backend_json(args: &[&str]) -> Result<serde_json::Value, String> {
     let output = run_backend(args)?;
     serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+}
+
+fn clean_backend_error(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "The local backend did not return an error message.".to_string();
+    }
+    if trimmed.contains("Traceback (most recent call last)") {
+        if let Some(last_line) = trimmed.lines().rev().find(|line| !line.trim().is_empty()) {
+            return format!("Local backend error: {}", last_line.trim());
+        }
+        return "Local backend error. Check the backend logs for details.".to_string();
+    }
+    trimmed.to_string()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

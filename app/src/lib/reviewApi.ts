@@ -6,6 +6,8 @@ export type SummaryOutput = {
   provider_name?: string | null;
   model_name?: string | null;
   generated_at?: string | null;
+  quality_status?: "ok" | "low_confidence";
+  quality_reasons?: string[];
 };
 
 export type ExtractedOutput = {

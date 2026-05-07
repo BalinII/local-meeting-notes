@@ -435,7 +435,7 @@ class SessionWorkflowService:
         decisions = [item for item in summary_payload.get("decisions", []) if item.get("review_status") in {"accepted", "edited"}][:5]
         executive = ""
         for summary in summary_payload.get("summaries", []):
-            if str(summary.get("summary_type")) == "executive":
+            if str(summary.get("summary_type")) == "executive" and summary.get("quality_status") != "low_confidence":
                 executive = str(summary.get("content") or "").strip()
                 break
         return {

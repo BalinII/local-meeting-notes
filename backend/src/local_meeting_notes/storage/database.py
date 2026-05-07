@@ -30,8 +30,12 @@ MEETING_MIGRATIONS = {
     "latest_model_name": "ALTER TABLE meetings ADD COLUMN latest_model_name TEXT",
     "has_reviewed_items": "ALTER TABLE meetings ADD COLUMN has_reviewed_items INTEGER NOT NULL DEFAULT 0",
     "session_type": "ALTER TABLE meetings ADD COLUMN session_type TEXT NOT NULL DEFAULT 'ad_hoc'",
+    "source_type": "ALTER TABLE meetings ADD COLUMN source_type TEXT NOT NULL DEFAULT 'ad_hoc'",
     "planned_start_at": "ALTER TABLE meetings ADD COLUMN planned_start_at TEXT",
     "planning_notes": "ALTER TABLE meetings ADD COLUMN planning_notes TEXT",
+    "external_meeting_id": "ALTER TABLE meetings ADD COLUMN external_meeting_id TEXT",
+    "imported_title": "ALTER TABLE meetings ADD COLUMN imported_title TEXT",
+    "imported_metadata_json": "ALTER TABLE meetings ADD COLUMN imported_metadata_json TEXT",
 }
 
 TRANSCRIPT_SEGMENT_MIGRATIONS = {
@@ -172,6 +176,7 @@ def _apply_schema_migrations(connection: sqlite3.Connection) -> None:
     _apply_table_migrations(connection, "actions", ACTION_MIGRATIONS)
     _apply_table_migrations(connection, "decisions", DECISION_MIGRATIONS)
     _apply_table_migrations(connection, "follow_ups", FOLLOW_UP_MIGRATIONS)
+    _backfill_meeting_source_types(connection)
 
 
 def _apply_table_migrations(
@@ -187,3 +192,42 @@ def _apply_table_migrations(
     for column_name, statement in migrations.items():
         if column_name not in columns:
             connection.execute(statement)
+
+
+def _backfill_meeting_source_types(connection: sqlite3.Connection) -> None:
+    table_names = {
+        row["name"]
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    if "meetings" not in table_names:
+        return
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(meetings)").fetchall()}
+    if not {"source_type", "session_type"}.issubset(columns):
+        return
+    if "external_meeting_id" in columns:
+        connection.execute(
+            """
+            UPDATE meetings
+            SET source_type = CASE
+                WHEN COALESCE(external_meeting_id, '') <> '' THEN 'calendar_imported'
+                WHEN session_type = 'planned' THEN 'planned'
+                ELSE 'ad_hoc'
+            END
+            WHERE source_type IS NULL
+                OR source_type = ''
+                OR (source_type = 'ad_hoc' AND session_type = 'planned')
+            """
+        )
+        return
+    connection.execute(
+        """
+        UPDATE meetings
+        SET source_type = CASE
+            WHEN session_type = 'planned' THEN 'planned'
+            ELSE 'ad_hoc'
+        END
+        WHERE source_type IS NULL
+            OR source_type = ''
+            OR (source_type = 'ad_hoc' AND session_type = 'planned')
+        """
+    )

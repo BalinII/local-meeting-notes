@@ -6,6 +6,7 @@ import logging
 
 from ..config import AppConfig
 from ..models import SummaryRecord
+from ..quality_guardrails import assess_summary_text
 from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
     delete_summaries_for_capture,
@@ -52,6 +53,11 @@ class SummarizerService:
 
             delete_summaries_for_capture(connection, capture_id)
             drafts = provider.build_summaries(capture_id, [dict(row) for row in transcript_rows])
+            drafts = [
+                draft
+                for draft in drafts
+                if assess_summary_text(draft.content, draft.evidence_snippet).is_acceptable
+            ]
             for draft in drafts:
                 insert_summary(
                     connection,
