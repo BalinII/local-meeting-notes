@@ -79,6 +79,46 @@ test("opening a named session makes the review target obvious", async ({ page })
       blockers_risks: [],
       open_questions: [],
     };
+    const sessionBriefing = {
+      capture_id: "capture-alpha",
+      display_name: "Sprint Planning",
+      related_session_ids: ["capture-prior"],
+      briefing: {
+        prior_executive_summary: "The last sprint review left one dependency to settle before planning.",
+        open_actions: [
+          {
+            id: 11,
+            item_type: "action",
+            capture_id: "capture-prior",
+            source_display_name: "Sprint Review",
+            effective_description: "Confirm the API owner before committing sprint scope.",
+            effective_owner_name: "Riley",
+            workflow_state: "open",
+            review_status: "edited",
+            due_at: "2026-05-02T09:00:00+10:00",
+            notes: "Ask during opening.",
+            carry_count: 0,
+          },
+        ],
+        carried_forward_items: [
+          {
+            id: 12,
+            item_type: "action",
+            capture_id: "capture-prior",
+            source_display_name: "Sprint Review",
+            effective_description: "Carry launch-risk check into planning.",
+            effective_owner_name: "Morgan",
+            workflow_state: "carried_forward",
+            review_status: "accepted",
+            carry_source_capture_id: "capture-prior",
+            carry_count: 1,
+          },
+        ],
+        recent_decisions: [],
+        active_blockers_risks: [],
+        open_questions: [],
+      },
+    };
 
     window.__TAURI__ = {
       core: {
@@ -86,6 +126,7 @@ test("opening a named session makes the review target obvious", async ({ page })
           if (command === "list_recent_captures") return sessions;
           if (command === "session_library") return { sessions };
           if (command === "review_capture") return reviewPayload;
+          if (command === "get_session_briefing") return sessionBriefing;
           if (command === "list_planned_sessions" || command === "list_upcoming_sessions") return { sessions: [] };
           if (command === "list_action_tracker_items" || command === "list_memory_items") return { items: [] };
           if (command === "session_search") return { query: "", total_matches: 0, sessions: [] };
@@ -110,5 +151,9 @@ test("opening a named session makes the review target obvious", async ({ page })
   await expect(activeRecentSession).toBeVisible();
   await expect(activeRecentSession.getByText("Currently reviewing")).toBeVisible();
   await expect(activeRecentSession.getByText("Capture ID: capture-alpha")).toBeVisible();
+  await expect(page.getByText("The last sprint review left one dependency to settle before planning.")).toBeVisible();
+  await expect(page.getByText("Confirm the API owner before committing sprint scope.")).toBeVisible();
+  await expect(page.getByText("Sprint Review · open · Owner: Riley")).toBeVisible();
+  await expect(page.getByText("Carry launch-risk check into planning.")).toBeVisible();
   await expect.poll(async () => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(100);
 });

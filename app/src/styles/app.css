@@ -325,6 +325,60 @@ textarea {
   margin: 0 0 6px;
 }
 
+.briefing-panel {
+  border-top: 1px solid rgba(23, 32, 51, 0.08);
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.briefing-heading,
+.briefing-section-title {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.briefing-heading h3 {
+  margin: 0;
+}
+
+.briefing-summary {
+  color: #334158;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.briefing-section {
+  display: grid;
+  gap: 8px;
+}
+
+.briefing-item-list {
+  display: grid;
+  gap: 8px;
+}
+
+.briefing-item {
+  border-left: 3px solid rgba(63, 131, 204, 0.28);
+  display: grid;
+  gap: 6px;
+  padding-left: 10px;
+}
+
+.briefing-item strong {
+  color: #172033;
+  line-height: 1.35;
+}
+
+.briefing-item p {
+  color: #667388;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .session-list {
   display: grid;
   gap: 10px;

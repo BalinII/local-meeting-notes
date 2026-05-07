@@ -15,6 +15,7 @@ It is not production-ready.
 - Human review of actions, decisions, follow-ups, blockers/risks, and open questions.
 - Markdown, HTML, and JSON export with final-notes defaults for Markdown/HTML and full-detail JSON for audit payloads.
 - Session library with local sort/filter controls, search scopes, global action workflow filters, and memory views.
+- Lightweight pre-meeting briefing for related planned/current/opened sessions.
 - Local LLM provider option with heuristic fallback.
 
 ## Current Product Boundaries
@@ -56,6 +57,14 @@ It is not production-ready.
 - Users can filter by workflow state and sort by recency, oldest first, owner, or source session.
 - Source session, owner, review status, item type, and last-updated time remain visible for traceability.
 
+## Meeting Continuity And Briefing
+
+- Briefing is concise context before or while opening a session, not a full prep workspace.
+- It can surface unresolved open actions, carried-forward items, recent decisions, active blockers/risks, open questions, and a short prior executive summary.
+- Related sessions are chosen by exact normalized title/imported-title match, exact external meeting id, or existing carry-source links.
+- Rejected items are suppressed, reviewed/final content is preferred, and generated content is used only conservatively when nothing reviewed is available.
+- Carry-forward items keep source session, owner, due date, notes, workflow state, and carry-source traceability where available.
+
 ## Local LLM Behavior
 
 - Ollama is the current local LLM target.
@@ -70,9 +79,10 @@ It is not production-ready.
 3. Transcription and diarization remain imperfect.
 4. Speaker identity mapping is not implemented.
 5. Search is practical and scoped, but not full-text ranked search.
-6. Local LLM quality varies by model, hardware, and timeout settings.
-7. Processing is synchronous from the desktop user's point of view.
-8. Operational hardening and observability are prototype-level.
+6. Briefing uses conservative local linkage and can miss related context when titles or metadata differ.
+7. Local LLM quality varies by model, hardware, and timeout settings.
+8. Processing is synchronous from the desktop user's point of view.
+9. Operational hardening and observability are prototype-level.
 
 ## Recommended Demo Framing
 

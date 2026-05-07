@@ -98,16 +98,35 @@ export type SessionOverview = SessionLibraryEntry & {
     last_error?: string | null;
   } | null;
 };
+
+export type BriefingItem = {
+  id: number;
+  item_type: string;
+  capture_id: string;
+  source_display_name: string;
+  source_lifecycle_state?: string | null;
+  effective_description: string;
+  effective_owner_name?: string | null;
+  workflow_state?: "open" | "done" | "dismissed" | "carried_forward";
+  review_status?: string;
+  due_at?: string | null;
+  notes?: string | null;
+  carry_source_capture_id?: string | null;
+  carry_count?: number;
+  last_updated_at?: string | null;
+  evidence_snippet?: string | null;
+};
+
 export type SessionBriefing = {
   capture_id: string;
   display_name: string;
   related_session_ids: string[];
   briefing: {
-    open_actions: ActionTrackerItem[];
-    carried_forward_items: ActionTrackerItem[];
-    recent_decisions: ExtractedOutput[];
-    active_blockers_risks: ExtractedOutput[];
-    open_questions: ExtractedOutput[];
+    open_actions: BriefingItem[];
+    carried_forward_items: BriefingItem[];
+    recent_decisions: BriefingItem[];
+    active_blockers_risks: BriefingItem[];
+    open_questions: BriefingItem[];
     prior_executive_summary?: string | null;
   };
 };

@@ -23,6 +23,7 @@ import {
   type ActionTrackerItem,
   type ActionWorkflowFilter,
   type ActionWorkflowSort,
+  type BriefingItem,
   type ExtractedOutput,
   type LibraryFilter,
   type LibrarySort,
@@ -236,6 +237,7 @@ export function AppShell() {
       setSelectedCaptureId(started.capture_id);
       setCaptureId(started.capture_id);
       setPayload(null);
+      setSessionBriefing(null);
       setNewRecordingTitle("");
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshLibrary();
@@ -472,6 +474,7 @@ export function AppShell() {
                 </button>
               )}
             </div>
+            {sessionBriefing ? <BriefingPanel briefing={sessionBriefing} /> : null}
           </div>
         )}
         <p className="status-line">{status}</p>
@@ -544,14 +547,7 @@ export function AppShell() {
                     <button onClick={() => void handleExport("json", "full_detail")}>Export Full Detail (JSON)</button>
                     <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
                   </div>
-                  {sessionBriefing ? (
-                    <div style={{ marginTop: 12 }}>
-                      <h3 style={{ marginBottom: 6 }}>Before you start</h3>
-                      {sessionBriefing.briefing.prior_executive_summary ? <p className="muted">{sessionBriefing.briefing.prior_executive_summary}</p> : null}
-                      <p className="muted">Related sessions: {sessionBriefing.related_session_ids.length}</p>
-                      <p className="muted">Open actions: {sessionBriefing.briefing.open_actions.length} · Carried forward: {sessionBriefing.briefing.carried_forward_items.length}</p>
-                    </div>
-                  ) : null}
+                  {sessionBriefing ? <BriefingPanel briefing={sessionBriefing} /> : null}
                 </aside>
                 <section className="review-content">
                   <SummaryPanel summaries={payload.summaries} />
@@ -819,6 +815,62 @@ export function AppShell() {
         </section>
       )}
     </main>
+  );
+}
+
+function BriefingPanel({ briefing }: { briefing: SessionBriefing }) {
+  const sections: { title: string; items: BriefingItem[]; showOwner?: boolean }[] = [
+    { title: "Open actions", items: briefing.briefing.open_actions, showOwner: true },
+    { title: "Carried forward", items: briefing.briefing.carried_forward_items, showOwner: true },
+    { title: "Recent decisions", items: briefing.briefing.recent_decisions },
+    { title: "Blockers / risks", items: briefing.briefing.active_blockers_risks, showOwner: true },
+    { title: "Open questions", items: briefing.briefing.open_questions, showOwner: true },
+  ];
+  const visibleSections = sections.filter((section) => section.items.length);
+  const hasBriefing = Boolean(briefing.briefing.prior_executive_summary) || visibleSections.length > 0;
+
+  return (
+    <section className="briefing-panel">
+      <div className="briefing-heading">
+        <div>
+          <p className="eyebrow">Before you start</p>
+          <h3>Briefing</h3>
+        </div>
+        <span className="status-pill subtle">{briefing.related_session_ids.length} related</span>
+      </div>
+      {briefing.briefing.prior_executive_summary ? <p className="briefing-summary">{briefing.briefing.prior_executive_summary}</p> : null}
+      {!hasBriefing ? <p className="muted">No unresolved related context found.</p> : null}
+      {visibleSections.map((section) => (
+        <div className="briefing-section" key={section.title}>
+          <div className="briefing-section-title">
+            <strong>{section.title}</strong>
+            <span className="count-pill">{section.items.length}</span>
+          </div>
+          <div className="briefing-item-list">
+            {section.items.map((item) => <BriefingItemRow item={item} key={`${section.title}-${item.item_type}-${item.id}`} showOwner={section.showOwner} />)}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function BriefingItemRow({ item, showOwner = false }: { item: BriefingItem; showOwner?: boolean }) {
+  const source = item.source_display_name || item.capture_id;
+  const owner = showOwner ? item.effective_owner_name || "Unknown" : "";
+  const metadata = [
+    source,
+    item.workflow_state ? formatState(item.workflow_state) : null,
+    owner ? `Owner: ${owner}` : null,
+    item.due_at ? `Due: ${formatDate(item.due_at)}` : null,
+  ].filter(Boolean);
+  return (
+    <article className="briefing-item">
+      <strong>{item.effective_description}</strong>
+      <p>{metadata.join(" · ")}</p>
+      {item.notes ? <p className="muted">Notes: {item.notes}</p> : null}
+      {item.carry_source_capture_id ? <span className="status-pill subtle">From {captureIdLabel(item.carry_source_capture_id)}</span> : null}
+    </article>
   );
 }
 
