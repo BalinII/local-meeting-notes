@@ -972,22 +972,24 @@ def fetch_recent_capture_activity(
             WHERE capture_id <> ''
         )
         SELECT
-            capture_id,
-            MIN(generated_at) AS first_generated_at,
-            MAX(generated_at) AS latest_generated_at,
-            MAX(reviewed_at) AS latest_reviewed_at,
-            GROUP_CONCAT(DISTINCT provider_name) AS providers,
-            GROUP_CONCAT(DISTINCT model_name) AS models,
+            capture_events.capture_id,
+            COALESCE(MAX(meetings.title), capture_events.capture_id) AS display_name,
+            MIN(capture_events.generated_at) AS first_generated_at,
+            MAX(capture_events.generated_at) AS latest_generated_at,
+            MAX(capture_events.reviewed_at) AS latest_reviewed_at,
+            GROUP_CONCAT(DISTINCT capture_events.provider_name) AS providers,
+            GROUP_CONCAT(DISTINCT capture_events.model_name) AS models,
             MAX(
                 CASE
-                    WHEN review_status IN ('accepted', 'edited', 'rejected') OR reviewed_at IS NOT NULL
+                    WHEN capture_events.review_status IN ('accepted', 'edited', 'rejected') OR capture_events.reviewed_at IS NOT NULL
                     THEN 1
                     ELSE 0
                 END
             ) AS has_reviewed_items
         FROM capture_events
-        GROUP BY capture_id
-        ORDER BY COALESCE(MAX(generated_at), MAX(reviewed_at)) DESC, capture_id DESC
+        LEFT JOIN meetings ON meetings.capture_id = capture_events.capture_id
+        GROUP BY capture_events.capture_id
+        ORDER BY COALESCE(MAX(capture_events.generated_at), MAX(capture_events.reviewed_at)) DESC, capture_events.capture_id DESC
         LIMIT ?
         """,
         (safe_limit,),

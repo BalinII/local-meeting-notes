@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createRecordingSession,
   createPlannedSession,
@@ -23,6 +23,7 @@ import {
   type ActionTrackerItem,
   type ActionWorkflowFilter,
   type ActionWorkflowSort,
+  type BriefingItem,
   type ExtractedOutput,
   type LibraryFilter,
   type LibrarySort,
@@ -45,10 +46,12 @@ export function AppShell() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("review");
   const [captureId, setCaptureId] = useState("");
   const [selectedCaptureId, setSelectedCaptureId] = useState("");
+  const [pendingReviewScrollId, setPendingReviewScrollId] = useState<string | null>(null);
   const [recentCaptures, setRecentCaptures] = useState<RecentCapture[]>([]);
   const [payload, setPayload] = useState<ReviewPayload | null>(null);
   const [status, setStatus] = useState("Load a session to review persisted notes.");
   const [isLoading, setIsLoading] = useState(false);
+  const reviewSectionRef = useRef<HTMLElement | null>(null);
 
   const [library, setLibrary] = useState<SessionLibraryEntry[]>([]);
   const [librarySort, setLibrarySort] = useState<LibrarySort>("newest");
@@ -92,6 +95,17 @@ export function AppShell() {
   useEffect(() => {
     void refreshActions();
   }, [actionFilter, actionSort]);
+
+  useEffect(() => {
+    if (activeTab !== "review" || !payload || pendingReviewScrollId !== payload.capture_id) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      reviewSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingReviewScrollId(null);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, payload, pendingReviewScrollId]);
 
   async function refreshAll() {
     await Promise.all([refreshRecentCaptures(), refreshLibrary(), refreshActions(), refreshPlannedSessions(), refreshUpcomingSessions()]);
@@ -137,12 +151,14 @@ export function AppShell() {
     setIsLoading(true);
     try {
       const nextPayload = await loadReviewPayload(trimmed);
-      setSessionBriefing(await getSessionBriefing(trimmed));
+      const nextDisplayName = reviewDisplayName(nextPayload);
+      setSessionBriefing(await getSessionBriefing(nextPayload.capture_id));
       setPayload(nextPayload);
-      setCaptureId(trimmed);
-      setSelectedCaptureId(trimmed);
-      setStatus(`Opened ${nextPayload.metadata.display_name || nextPayload.capture_id}`);
+      setCaptureId(nextPayload.capture_id);
+      setSelectedCaptureId(nextPayload.capture_id);
+      setStatus(`Opened ${nextDisplayName}. Review section is ready.`);
       setActiveTab("review");
+      setPendingReviewScrollId(nextPayload.capture_id);
     } finally {
       setIsLoading(false);
     }
@@ -190,7 +206,7 @@ export function AppShell() {
   async function handleFinalise() {
     if (!payload) return;
     await finaliseCapture(payload.capture_id);
-    setStatus(`Session ${payload.capture_id} marked final.`);
+    setStatus(`${reviewDisplayName(payload)} marked final.`);
     await refreshLibrary();
     await loadCapture(payload.capture_id);
   }
@@ -221,6 +237,7 @@ export function AppShell() {
       setSelectedCaptureId(started.capture_id);
       setCaptureId(started.capture_id);
       setPayload(null);
+      setSessionBriefing(null);
       setNewRecordingTitle("");
       setStatus(`Recording ${started.display_name || started.capture_id}.`);
       await refreshLibrary();
@@ -372,6 +389,7 @@ export function AppShell() {
     recordingSession?.lifecycle_state,
     recordingSession?.last_error,
   );
+  const currentReviewDisplayName = payload ? reviewDisplayName(payload) : "";
 
   return (
     <main className="app-shell">
@@ -430,7 +448,7 @@ export function AppShell() {
             <div>
               <p className="eyebrow">Current recording</p>
               <strong>{recordingSession.display_name || recordingSession.capture_id}</strong>
-              <p className="capture-row-meta">{recordingSession.capture_id}</p>
+              <p className="capture-row-meta">{captureIdLabel(recordingSession.capture_id)}</p>
             </div>
             <div className="badge-row">
               <span className={`status-pill session-${recordingSession.lifecycle_state}`}>{formatState(recordingSession.lifecycle_state)}</span>
@@ -456,6 +474,7 @@ export function AppShell() {
                 </button>
               )}
             </div>
+            {sessionBriefing ? <BriefingPanel briefing={sessionBriefing} /> : null}
           </div>
         )}
         <p className="status-line">{status}</p>
@@ -485,44 +504,59 @@ export function AppShell() {
       {activeTab === "review" && (
         <section>
           <div className="capture-toolbar">
-            <input placeholder="capture-id" value={captureId} onChange={(event) => setCaptureId(event.target.value)} />
-            <button onClick={() => void loadCapture(captureId)} disabled={isLoading}>{isLoading ? "Loading..." : "Load Capture"}</button>
+            <input aria-label="Open by capture ID" placeholder="Capture ID (advanced)" value={captureId} onChange={(event) => setCaptureId(event.target.value)} />
+            <button onClick={() => void loadCapture(captureId)} disabled={isLoading}>{isLoading ? "Opening..." : "Open Session"}</button>
           </div>
           <div className="capture-list" style={{ marginTop: 12 }}>
-            {recentCaptures.map((capture) => (
-              <button key={capture.capture_id} className={`capture-row ${capture.capture_id === selectedCaptureId ? "active" : ""}`} onClick={() => void loadCapture(capture.capture_id)}>
-                <div className="capture-row-title"><strong>{capture.capture_id}</strong></div>
-                <p className="capture-row-meta">{formatDate(capture.latest_generated_at || capture.created_at)}</p>
-              </button>
-            ))}
+            {recentCaptures.map((capture) => {
+              const isSelected = capture.capture_id === selectedCaptureId;
+              return (
+                <button
+                  key={capture.capture_id}
+                  className={`capture-row ${isSelected ? "active" : ""}`}
+                  aria-current={isSelected ? "true" : undefined}
+                  onClick={() => void loadCapture(capture.capture_id)}
+                >
+                  <div className="capture-row-title">
+                    <strong>{displayNameOrCaptureId(capture)}</strong>
+                    {isSelected ? <span className="status-pill selected-session">Currently reviewing</span> : null}
+                  </div>
+                  <p className="capture-row-meta">{formatDate(capture.latest_generated_at || capture.created_at)} · {captureIdLabel(capture.capture_id)}</p>
+                </button>
+              );
+            })}
           </div>
           {payload && (
-            <section className="review-layout" style={{ marginTop: 14 }}>
-              <aside className="review-sidebar">
-                <h2>{payload.metadata.display_name || payload.capture_id}</h2>
-                <p>{payload.capture_id}</p>
-                <div className="export-actions">
-                  <button onClick={() => void handleExport("markdown", "final_notes")}>Export Final Notes (Markdown)</button>
-                  <button onClick={() => void handleExport("html", "final_notes")}>Export Final Notes (HTML)</button>
-                  <button onClick={() => void handleExport("json", "full_detail")}>Export Full Detail (JSON)</button>
-                  <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
+            <section className="review-session" ref={reviewSectionRef} aria-live="polite">
+              <div className="review-session-context">
+                <div>
+                  <p className="eyebrow">Reviewing</p>
+                  <h2>Reviewing: {currentReviewDisplayName}</h2>
+                  <p className="capture-row-meta">{captureIdLabel(payload.capture_id)}</p>
                 </div>
-                {sessionBriefing ? (
-                  <div style={{ marginTop: 12 }}>
-                    <h3 style={{ marginBottom: 6 }}>Before you start</h3>
-                    {sessionBriefing.briefing.prior_executive_summary ? <p className="muted">{sessionBriefing.briefing.prior_executive_summary}</p> : null}
-                    <p className="muted">Related sessions: {sessionBriefing.related_session_ids.length}</p>
-                    <p className="muted">Open actions: {sessionBriefing.briefing.open_actions.length} · Carried forward: {sessionBriefing.briefing.carried_forward_items.length}</p>
+                <span className="status-pill selected-session">Currently reviewing</span>
+              </div>
+              <section className="review-layout" style={{ marginTop: 14 }}>
+                <aside className="review-sidebar">
+                  <p className="eyebrow">Session details</p>
+                  <h2>{currentReviewDisplayName}</h2>
+                  <p>{captureIdLabel(payload.capture_id)}</p>
+                  <div className="export-actions">
+                    <button onClick={() => void handleExport("markdown", "final_notes")}>Export Final Notes (Markdown)</button>
+                    <button onClick={() => void handleExport("html", "final_notes")}>Export Final Notes (HTML)</button>
+                    <button onClick={() => void handleExport("json", "full_detail")}>Export Full Detail (JSON)</button>
+                    <button className="secondary-button" onClick={() => void handleFinalise()}>Finalise Notes</button>
                   </div>
-                ) : null}
-              </aside>
-              <section className="review-content">
-                <SummaryPanel summaries={payload.summaries} />
-                <ItemPanel title="Actions" items={payload.actions} showOwner onReviewItem={handleReviewItem} />
-                <ItemPanel title="Decisions" items={payload.decisions} onReviewItem={handleReviewItem} />
-                <ItemPanel title="Follow-ups" items={payload.follow_ups} showOwner onReviewItem={handleReviewItem} />
-                <ItemPanel title="Blockers / Risks" items={payload.blockers_risks} showOwner tone="risk" onReviewItem={handleReviewItem} />
-                <ItemPanel title="Open Questions" items={payload.open_questions} showOwner tone="question" onReviewItem={handleReviewItem} />
+                  {sessionBriefing ? <BriefingPanel briefing={sessionBriefing} /> : null}
+                </aside>
+                <section className="review-content">
+                  <SummaryPanel summaries={payload.summaries} />
+                  <ItemPanel title="Actions" items={payload.actions} showOwner onReviewItem={handleReviewItem} />
+                  <ItemPanel title="Decisions" items={payload.decisions} onReviewItem={handleReviewItem} />
+                  <ItemPanel title="Follow-ups" items={payload.follow_ups} showOwner onReviewItem={handleReviewItem} />
+                  <ItemPanel title="Blockers / Risks" items={payload.blockers_risks} showOwner tone="risk" onReviewItem={handleReviewItem} />
+                  <ItemPanel title="Open Questions" items={payload.open_questions} showOwner tone="question" onReviewItem={handleReviewItem} />
+                </section>
               </section>
             </section>
           )}
@@ -563,30 +597,39 @@ export function AppShell() {
             <div className="empty-state">{libraryFilter === "all" ? "No sessions have been saved yet. New recordings will appear here." : "No sessions match the current library filter."}</div>
           ) : (
             <div className="session-list session-browser">
-              {library.map((session) => (
-                <article className={`session-row ${session.capture_id === selectedCaptureId ? "active" : ""}`} key={session.capture_id} onClick={() => void loadCapture(session.capture_id)}>
-                  <div className="session-row-main">
-                    <div>
-                      <strong>{session.display_name || session.capture_id}</strong>
-                      <p className="capture-row-meta">{formatDate(session.updated_at || session.created_at)} · {session.capture_id}</p>
+              {library.map((session) => {
+                const isSelected = session.capture_id === selectedCaptureId;
+                return (
+                  <article
+                    className={`session-row ${isSelected ? "active" : ""}`}
+                    key={session.capture_id}
+                    aria-current={isSelected ? "true" : undefined}
+                    onClick={() => void loadCapture(session.capture_id)}
+                  >
+                    <div className="session-row-main">
+                      <div>
+                        <strong>{displayNameOrCaptureId(session)}</strong>
+                        <p className="capture-row-meta">{formatDate(session.updated_at || session.created_at)} · {captureIdLabel(session.capture_id)}</p>
+                      </div>
+                      <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
+                        {isSelected ? "Open Review" : "Open Session"}
+                      </button>
                     </div>
-                    <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
-                      {session.capture_id === selectedCaptureId ? "Open Again" : "Open Session"}
-                    </button>
-                  </div>
-                  <div className="badge-row">
-                    <span className={`status-pill session-${session.lifecycle_state}`}>{formatState(session.lifecycle_state)}</span>
-                    {session.reviewed_items_exist ? <span className="status-pill review-edited">reviewed</span> : null}
-                    {session.lifecycle_state === "final" ? <span className="status-pill review-accepted">final</span> : null}
-                    {session.exported_at ? <span className="status-pill subtle">exported</span> : null}
-                    {session.lifecycle_state === "processing_failed" || session.last_error ? <span className="status-pill warning">needs attention</span> : null}
-                  </div>
-                  {(session.providers.length || session.models.length) ? (
-                    <p className="capture-row-meta">{compactMetadata(session.providers, session.models)}</p>
-                  ) : null}
-                  {session.last_error ? <p className="error-text">{userFacingError(session.last_error)}</p> : null}
-                </article>
-              ))}
+                    <div className="badge-row">
+                      {isSelected ? <span className="status-pill selected-session">Currently reviewing</span> : null}
+                      <span className={`status-pill session-${session.lifecycle_state}`}>{formatState(session.lifecycle_state)}</span>
+                      {session.reviewed_items_exist ? <span className="status-pill review-edited">reviewed</span> : null}
+                      {session.lifecycle_state === "final" ? <span className="status-pill review-accepted">final</span> : null}
+                      {session.exported_at ? <span className="status-pill subtle">exported</span> : null}
+                      {session.lifecycle_state === "processing_failed" || session.last_error ? <span className="status-pill warning">needs attention</span> : null}
+                    </div>
+                    {(session.providers.length || session.models.length) ? (
+                      <p className="capture-row-meta">{compactMetadata(session.providers, session.models)}</p>
+                    ) : null}
+                    {session.last_error ? <p className="error-text">{userFacingError(session.last_error)}</p> : null}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
@@ -613,27 +656,40 @@ export function AppShell() {
           <div className="workspace-group-list">
             {isSearching ? <div className="empty-state">Searching local persisted content...</div> : null}
             {!isSearching && searchQuery.trim() && !searchResults.total_matches ? <div className="empty-state">No local matches for this query and scope.</div> : null}
-            {searchResults.sessions.map((session) => (
-              <div className={`workspace-group ${session.capture_id === selectedCaptureId ? "active" : ""}`} key={session.capture_id} onClick={() => void loadCapture(session.capture_id)}>
-                <div className="workspace-group-heading">
-                  <div>
-                    <h3>{session.display_name}</h3>
-                    <p>{session.capture_id} · {formatState(session.lifecycle_state)}</p>
+            {searchResults.sessions.map((session) => {
+              const isSelected = session.capture_id === selectedCaptureId;
+              return (
+                <div
+                  className={`workspace-group ${isSelected ? "active" : ""}`}
+                  key={session.capture_id}
+                  aria-current={isSelected ? "true" : undefined}
+                  onClick={() => void loadCapture(session.capture_id)}
+                >
+                  <div className="workspace-group-heading">
+                    <div>
+                      <h3>{displayNameOrCaptureId(session)}</h3>
+                      <p>{captureIdLabel(session.capture_id)} · {formatState(session.lifecycle_state)}</p>
+                    </div>
+                    <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
+                      {isSelected ? "Open Review" : "Open Session"}
+                    </button>
                   </div>
-                  <button className="secondary-button" onClick={(event) => { event.stopPropagation(); void loadCapture(session.capture_id); }}>
-                    {session.capture_id === selectedCaptureId ? "Current Session" : "Open Session"}
-                  </button>
+                  {isSelected ? (
+                    <div className="badge-row search-session-badges">
+                      <span className="status-pill selected-session">Currently reviewing</span>
+                    </div>
+                  ) : null}
+                  <div className="workspace-item-list">
+                    {session.matches.map((match, index) => (
+                      <article className="workspace-item" key={`${session.capture_id}-${index}`}>
+                        <div className="badge-row"><span className="status-pill subtle">{formatState(match.item_type)}</span><span className="status-pill subtle">{match.field_name}</span></div>
+                        <p>{highlightSnippet(match.snippet, searchQuery)}</p>
+                      </article>
+                    ))}
+                  </div>
                 </div>
-                <div className="workspace-item-list">
-                  {session.matches.map((match, index) => (
-                    <article className="workspace-item" key={`${session.capture_id}-${index}`}>
-                      <div className="badge-row"><span className="status-pill subtle">{formatState(match.item_type)}</span><span className="status-pill subtle">{match.field_name}</span></div>
-                      <p>{highlightSnippet(match.snippet, searchQuery)}</p>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -702,7 +758,7 @@ export function AppShell() {
                           <div className="action-item-main">
                             <div>
                               <strong>{item.effective_description}</strong>
-                              <p>{item.source_display_name} · {item.capture_id} · Owner: {item.effective_owner_name || "Unknown"}</p>
+                              <p>{item.source_display_name} · {captureIdLabel(item.capture_id)} · Owner: {item.effective_owner_name || "Unknown"}</p>
                               <p className="muted">Due: {formatDate(item.due_at)} · Carry count: {item.carry_count || 0}</p>
                               {item.notes ? <p className="muted">Notes: {item.notes}</p> : null}
                             </div>
@@ -752,13 +808,69 @@ export function AppShell() {
             {memoryItems.map((item) => (
               <article className="workspace-item" key={`${item.item_type}-${item.id}`}>
                 <strong>{item.effective_description}</strong>
-                <p>{item.source_display_name} · {item.capture_id}</p>
+                <p>{item.source_display_name} · {captureIdLabel(item.capture_id)}</p>
               </article>
             ))}
           </div>
         </section>
       )}
     </main>
+  );
+}
+
+function BriefingPanel({ briefing }: { briefing: SessionBriefing }) {
+  const sections: { title: string; items: BriefingItem[]; showOwner?: boolean }[] = [
+    { title: "Open actions", items: briefing.briefing.open_actions, showOwner: true },
+    { title: "Carried forward", items: briefing.briefing.carried_forward_items, showOwner: true },
+    { title: "Recent decisions", items: briefing.briefing.recent_decisions },
+    { title: "Blockers / risks", items: briefing.briefing.active_blockers_risks, showOwner: true },
+    { title: "Open questions", items: briefing.briefing.open_questions, showOwner: true },
+  ];
+  const visibleSections = sections.filter((section) => section.items.length);
+  const hasBriefing = Boolean(briefing.briefing.prior_executive_summary) || visibleSections.length > 0;
+
+  return (
+    <section className="briefing-panel">
+      <div className="briefing-heading">
+        <div>
+          <p className="eyebrow">Before you start</p>
+          <h3>Briefing</h3>
+        </div>
+        <span className="status-pill subtle">{briefing.related_session_ids.length} related</span>
+      </div>
+      {briefing.briefing.prior_executive_summary ? <p className="briefing-summary">{briefing.briefing.prior_executive_summary}</p> : null}
+      {!hasBriefing ? <p className="muted">No unresolved related context found.</p> : null}
+      {visibleSections.map((section) => (
+        <div className="briefing-section" key={section.title}>
+          <div className="briefing-section-title">
+            <strong>{section.title}</strong>
+            <span className="count-pill">{section.items.length}</span>
+          </div>
+          <div className="briefing-item-list">
+            {section.items.map((item) => <BriefingItemRow item={item} key={`${section.title}-${item.item_type}-${item.id}`} showOwner={section.showOwner} />)}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function BriefingItemRow({ item, showOwner = false }: { item: BriefingItem; showOwner?: boolean }) {
+  const source = item.source_display_name || item.capture_id;
+  const owner = showOwner ? item.effective_owner_name || "Unknown" : "";
+  const metadata = [
+    source,
+    item.workflow_state ? formatState(item.workflow_state) : null,
+    owner ? `Owner: ${owner}` : null,
+    item.due_at ? `Due: ${formatDate(item.due_at)}` : null,
+  ].filter(Boolean);
+  return (
+    <article className="briefing-item">
+      <strong>{item.effective_description}</strong>
+      <p>{metadata.join(" · ")}</p>
+      {item.notes ? <p className="muted">Notes: {item.notes}</p> : null}
+      {item.carry_source_capture_id ? <span className="status-pill subtle">From {captureIdLabel(item.carry_source_capture_id)}</span> : null}
+    </article>
   );
 }
 
@@ -835,6 +947,18 @@ function compactMetadata(providers: string[], models: string[]): string {
 
 function formatWorkflowState(value: ActionTrackerItem["workflow_state"]): string {
   return value.replace(/_/g, " ");
+}
+
+function reviewDisplayName(payload: ReviewPayload): string {
+  return payload.metadata.display_name?.trim() || payload.capture_id;
+}
+
+function displayNameOrCaptureId(session: { display_name?: string | null; capture_id: string }): string {
+  return session.display_name?.trim() || session.capture_id;
+}
+
+function captureIdLabel(captureId: string): string {
+  return `Capture ID: ${captureId}`;
 }
 
 function groupActionItems(items: ActionTrackerItem[], mode: ActionGroupMode) {

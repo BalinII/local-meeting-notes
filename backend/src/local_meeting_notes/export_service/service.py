@@ -105,6 +105,7 @@ class ExportService:
             captures.append(
                 {
                     "capture_id": row["capture_id"],
+                    "display_name": row["display_name"],
                     "created_at": row["first_generated_at"],
                     "latest_generated_at": row["latest_generated_at"],
                     "latest_reviewed_at": row["latest_reviewed_at"],

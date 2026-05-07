@@ -146,6 +146,10 @@ Search is also local and SQLite-backed. Results are grouped by session, prefer r
 
 The Global Action Tracker is for follow-through across sessions. It shows actionable `action` and `follow_up` items, keeps source session and owner visible, supports workflow states `open`, `done`, `carried_forward`, and `dismissed`, and can filter active/all/open/done/carried-forward/dismissed items. Sorting is available by most recent, oldest, owner, or source session. Workflow changes are persisted locally in SQLite and survive app restart.
 
+Pre-meeting briefing is a lightweight continuity surface for planned, current, or opened sessions. It can show unresolved open actions, carried-forward items, recent decisions, active blockers/risks, open questions, and one short prior-session executive summary when an acceptable summary already exists. Briefings prefer reviewed/final content, hide rejected items, keep source session names visible, and preserve owner, due date, notes, workflow state, and carry-forward source details where those fields exist.
+
+Related context is chosen conservatively. A session is considered related when prior local sessions share the same normalized title/imported title, the same external meeting id, or an already-stored carried-forward source link connects them. This is intentionally not a relationship engine, project workspace, reminder system, or analytics feature; it is a local pre-meeting checklist of context that still appears relevant.
+
 Recording confidence cues in the desktop app show when capture is starting, active, pausing, resuming, stopping, processing locally, ready for review, or needs attention. Pause and stop are cooperative because the app may wait for the current audio chunk to close before changing state or processing saved audio.
 
 ## Optional Local LLM Setup

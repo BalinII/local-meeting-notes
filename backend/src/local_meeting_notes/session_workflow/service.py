@@ -424,33 +424,78 @@ class SessionWorkflowService:
             current = dict(row)
             meetings = [dict(item) for item in fetch_recent_meetings(connection, limit=300)]
             workspace = [_hydrate_workspace_item(dict(item)) for item in fetch_cross_session_action_items(connection, limit=1000)]
-            summary_payload = self.export_service.build_review_payload(capture_id, export_mode="final_notes")
 
         related_ids = _related_capture_ids(current, meetings)
-        related_workspace = [item for item in workspace if str(item.get("capture_id")) in related_ids and str(item.get("capture_id")) != capture_id]
-        open_actions = [item for item in related_workspace if item.get("item_type") == "action" and item.get("workflow_state") in {"open", "carried_forward"}][:6]
-        carried = [item for item in related_workspace if item.get("carry_source_capture_id")][:6]
-        blockers = [item for item in summary_payload.get("blockers_risks", []) if item.get("review_status") != "rejected"][:5]
-        questions = [item for item in summary_payload.get("open_questions", []) if item.get("review_status") != "rejected"][:5]
-        decisions = [item for item in summary_payload.get("decisions", []) if item.get("review_status") in {"accepted", "edited"}][:5]
-        executive = ""
-        for summary in summary_payload.get("summaries", []):
-            if str(summary.get("summary_type")) == "executive" and summary.get("quality_status") != "low_confidence":
-                executive = str(summary.get("content") or "").strip()
-                break
+        related_ids.update(_carry_source_related_ids(related_ids, workspace))
+        ordered_related_ids = _ordered_related_capture_ids(current, meetings, related_ids)
+        prior_related_ids = [item for item in ordered_related_ids if item != capture_id]
+        related_workspace = [
+            item
+            for item in workspace
+            if str(item.get("capture_id")) in related_ids and str(item.get("capture_id")) != capture_id
+        ]
+        open_actions = _sort_briefing_items([
+            item
+            for item in related_workspace
+            if item.get("item_type") == "action" and item.get("workflow_state") == "open"
+        ])[:6]
+        carried = _sort_briefing_items([
+            item
+            for item in related_workspace
+            if item.get("item_type") in {"action", "follow_up"} and item.get("workflow_state") == "carried_forward"
+        ])[:6]
+        blockers = _review_preferred_briefing_items([
+            item
+            for item in related_workspace
+            if item.get("item_type") == "blocker_risk" and item.get("workflow_state") in {"open", "carried_forward"}
+        ])[:5]
+        questions = _review_preferred_briefing_items([
+            item
+            for item in related_workspace
+            if item.get("item_type") == "open_question" and item.get("workflow_state") in {"open", "carried_forward"}
+        ])[:5]
+        decisions = _review_preferred_briefing_items([
+            item for item in related_workspace if item.get("item_type") == "decision"
+        ])[:5]
+        executive = self._prior_executive_summary(prior_related_ids)
         return {
             "capture_id": capture_id,
             "display_name": current.get("title") or capture_id,
-            "related_session_ids": sorted(related_ids),
+            "related_session_ids": prior_related_ids,
             "briefing": {
                 "open_actions": open_actions,
                 "carried_forward_items": carried,
                 "recent_decisions": decisions,
                 "active_blockers_risks": blockers,
                 "open_questions": questions,
-                "prior_executive_summary": executive[:420] if executive else None,
+                "prior_executive_summary": executive,
             },
         }
+
+    def _prior_executive_summary(self, related_capture_ids: list[str]) -> str | None:
+        candidates: list[tuple[int, int, str]] = []
+        for index, related_capture_id in enumerate(related_capture_ids[:12]):
+            try:
+                payload = self.export_service.build_review_payload(related_capture_id, export_mode="final_notes")
+            except Exception as error:  # pragma: no cover - defensive only; briefing should never block capture.
+                self.logger.warning("Could not build briefing summary for %s: %s", related_capture_id, error)
+                continue
+            metadata = payload.get("metadata", {})
+            content_state = str(metadata.get("content_state") or "generated") if isinstance(metadata, dict) else "generated"
+            state_rank = 0 if content_state in {"final", "reviewed", "exported"} else 1
+            for summary in payload.get("summaries", []):
+                if str(summary.get("summary_type")) != "executive":
+                    continue
+                if summary.get("quality_status") == "low_confidence":
+                    continue
+                content = str(summary.get("content") or "").strip()
+                if content:
+                    candidates.append((state_rank, index, content[:420]))
+                    break
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return candidates[0][2]
 
     def update_session_display_name(self, capture_id: str, display_name: str) -> dict[str, object]:
         cleaned = _clean_text(display_name)
@@ -1016,6 +1061,33 @@ def _sort_action_workspace_items(
     )
 
 
+def _sort_briefing_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    recent_first = sorted(
+        items,
+        key=lambda item: (
+            str(item.get("last_updated_at") or ""),
+            str(item.get("capture_id") or ""),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    )
+    return sorted(recent_first, key=_briefing_quality_rank)
+
+
+def _review_preferred_briefing_items(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    sorted_items = _sort_briefing_items(items)
+    reviewed = [item for item in sorted_items if item.get("review_status") in {"accepted", "edited"}]
+    return reviewed or sorted_items
+
+
+def _briefing_quality_rank(item: dict[str, object]) -> int:
+    if item.get("review_status") in {"accepted", "edited"}:
+        return 0
+    if item.get("source_lifecycle_state") in {"final", "reviewed", "exported"}:
+        return 1
+    return 2
+
+
 def _normalize_library_sort(value: str | None) -> str:
     sort = str(value or "newest").strip().casefold().replace("_", "-")
     if sort in {"oldest", "oldest-first"}:
@@ -1101,21 +1173,65 @@ def _normalize_search_text(value: str) -> str:
 
 def _related_capture_ids(current: dict[str, object], meetings: list[dict[str, object]]) -> set[str]:
     current_id = str(current.get("capture_id") or "")
-    current_title = _normalize_search_text(str(current.get("title") or ""))
+    current_titles = _meeting_title_keys(current)
     current_external = str(current.get("external_meeting_id") or "").strip()
     related: set[str] = {current_id}
     for meeting in meetings:
         capture_id = str(meeting.get("capture_id") or "")
         if not capture_id:
             continue
-        title = _normalize_search_text(str(meeting.get("title") or ""))
+        titles = _meeting_title_keys(meeting)
         external_id = str(meeting.get("external_meeting_id") or "").strip()
         if current_external and external_id and external_id == current_external:
             related.add(capture_id)
             continue
-        if current_title and title and title == current_title:
+        if current_titles and titles and current_titles.intersection(titles):
             related.add(capture_id)
     return related
+
+
+def _meeting_title_keys(meeting: dict[str, object]) -> set[str]:
+    return {
+        normalized
+        for normalized in (
+            _normalize_search_text(str(meeting.get("title") or "")),
+            _normalize_search_text(str(meeting.get("imported_title") or "")),
+        )
+        if normalized
+    }
+
+
+def _carry_source_related_ids(related_ids: set[str], workspace: list[dict[str, object]]) -> set[str]:
+    expanded: set[str] = set()
+    for item in workspace:
+        capture_id = str(item.get("capture_id") or "")
+        carry_source_capture_id = str(item.get("carry_source_capture_id") or "")
+        if not carry_source_capture_id:
+            continue
+        if capture_id in related_ids:
+            expanded.add(carry_source_capture_id)
+        if carry_source_capture_id in related_ids and capture_id:
+            expanded.add(capture_id)
+    return expanded
+
+
+def _ordered_related_capture_ids(
+    current: dict[str, object],
+    meetings: list[dict[str, object]],
+    related_ids: set[str],
+) -> list[str]:
+    current_id = str(current.get("capture_id") or "")
+    ordered: list[str] = []
+    for meeting in meetings:
+        capture_id = str(meeting.get("capture_id") or "")
+        if capture_id and capture_id in related_ids and capture_id not in ordered:
+            ordered.append(capture_id)
+    if current_id and current_id in related_ids and current_id not in ordered:
+        ordered.insert(0, current_id)
+    for capture_id in sorted(related_ids):
+        if capture_id and capture_id not in ordered:
+            ordered.append(capture_id)
+    return ordered
 
 
 def _display_search_field(field_name: object, item_type: object) -> str:

@@ -20,15 +20,16 @@ def test_exportable_items_full_detail_excludes_rejected_only():
 
 
 def test_related_capture_ids_matches_title_or_external_id():
-    current = {"capture_id": "a", "title": "Weekly Sync", "external_meeting_id": "ext-1"}
+    current = {"capture_id": "a", "title": "Weekly Sync", "external_meeting_id": "ext-1", "imported_title": ""}
     meetings = [
         {"capture_id": "a", "title": "Weekly Sync", "external_meeting_id": "ext-1"},
         {"capture_id": "b", "title": "Weekly Sync", "external_meeting_id": ""},
         {"capture_id": "c", "title": "Other", "external_meeting_id": "ext-1"},
+        {"capture_id": "e", "title": "Imported copy", "imported_title": "Weekly Sync", "external_meeting_id": ""},
         {"capture_id": "d", "title": "Other", "external_meeting_id": "ext-2"},
     ]
     related = _related_capture_ids(current, meetings)
-    assert related == {"a", "b", "c"}
+    assert related == {"a", "b", "c", "e"}
 
 
 def test_render_markdown_final_notes_is_lightweight():

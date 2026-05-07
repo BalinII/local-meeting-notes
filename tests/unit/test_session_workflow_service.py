@@ -846,6 +846,225 @@ def test_manual_rename_remains_authoritative_for_imported_session(local_tmp_dir)
     assert renamed["imported_title"] == "Imported Title"
 
 
+def test_session_briefing_uses_related_prior_context_and_suppresses_noise(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=ExportService(config),
+    )
+    prior = service.create_session("Weekly Sync")
+    current = service.create_planned_session(display_name="Weekly Sync", planned_start_at="2026-05-06T10:00:00+00:00")
+
+    with connection_context(config.database_path) as connection:
+        open_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Generated open action should use reviewed wording.",
+                owner_name="Unconfirmed speaker",
+                status="open",
+                generated_at="2026-05-01T00:00:00+00:00",
+            ),
+        )
+        carried_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Carry forward launch-risk check.",
+                owner_name="Morgan",
+                status="carried_forward",
+                generated_at="2026-05-02T00:00:00+00:00",
+            ),
+        )
+        done_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Done action should not be in briefing.",
+                status="done",
+                generated_at="2026-05-03T00:00:00+00:00",
+            ),
+        )
+        rejected_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Rejected action should not be in briefing.",
+                status="open",
+                generated_at="2026-05-04T00:00:00+00:00",
+            ),
+        )
+        generated_decision_id = insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Generated decision should yield to reviewed decision.",
+                generated_at="2026-05-05T00:00:00+00:00",
+            ),
+        )
+        accepted_decision_id = insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Initial accepted decision text.",
+                generated_at="2026-05-06T00:00:00+00:00",
+            ),
+        )
+        blocker_id = insert_follow_up(
+            connection,
+            FollowUpRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Resolve launch blocker before planning.",
+                follow_up_type="blocker_risk",
+                owner_name="Alex",
+                status="open",
+                generated_at="2026-05-07T00:00:00+00:00",
+            ),
+        )
+        rejected_question_id = insert_follow_up(
+            connection,
+            FollowUpRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                description="Rejected question should not appear.",
+                follow_up_type="open_question",
+                status="open",
+                generated_at="2026-05-08T00:00:00+00:00",
+            ),
+        )
+        insert_summary(
+            connection,
+            SummaryRecord(
+                id=None,
+                meeting_id=int(prior["id"]),
+                capture_id=str(prior["capture_id"]),
+                title="Executive Summary",
+                summary_type="executive",
+                content="The prior weekly sync settled launch scope and left one risk for the next meeting.",
+                evidence_snippet="Decision: launch scope is settled. Risk: one item remains.",
+                provider_name="local_llm",
+                generated_at="2026-05-09T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            "UPDATE actions SET review_status = 'edited', reviewed_description = 'Reviewed open action for the next sync.', reviewed_owner_name = 'Riley', due_at = '2026-05-10T00:00:00+00:00', notes = 'Mention during opening.' WHERE id = ?",
+            (open_action_id,),
+        )
+        connection.execute(
+            "UPDATE actions SET carry_source_capture_id = capture_id, carry_count = 1 WHERE id = ?",
+            (carried_action_id,),
+        )
+        connection.execute("UPDATE actions SET review_status = 'rejected' WHERE id = ?", (rejected_action_id,))
+        connection.execute("UPDATE decisions SET review_status = 'generated' WHERE id = ?", (generated_decision_id,))
+        connection.execute(
+            "UPDATE decisions SET review_status = 'accepted', reviewed_description = 'Reviewed decision for briefing.' WHERE id = ?",
+            (accepted_decision_id,),
+        )
+        connection.execute("UPDATE follow_ups SET review_status = 'accepted' WHERE id = ?", (blocker_id,))
+        connection.execute("UPDATE follow_ups SET review_status = 'rejected' WHERE id = ?", (rejected_question_id,))
+        update_meeting_fields(
+            connection,
+            str(prior["capture_id"]),
+            status="final",
+            has_reviewed_items=1,
+            updated_at="2026-05-09T00:00:00+00:00",
+        )
+        connection.commit()
+
+    briefing = service.session_briefing(str(current["capture_id"]))
+
+    assert briefing["related_session_ids"] == [prior["capture_id"]]
+    assert briefing["briefing"]["prior_executive_summary"].startswith("The prior weekly sync")
+    assert [item["effective_description"] for item in briefing["briefing"]["open_actions"]] == [
+        "Reviewed open action for the next sync."
+    ]
+    assert briefing["briefing"]["open_actions"][0]["source_display_name"] == "Weekly Sync"
+    assert briefing["briefing"]["open_actions"][0]["due_at"] == "2026-05-10T00:00:00+00:00"
+    assert briefing["briefing"]["open_actions"][0]["notes"] == "Mention during opening."
+    assert [item["id"] for item in briefing["briefing"]["carried_forward_items"]] == [carried_action_id]
+    assert briefing["briefing"]["carried_forward_items"][0]["carry_source_capture_id"] == prior["capture_id"]
+    assert [item["effective_description"] for item in briefing["briefing"]["recent_decisions"]] == [
+        "Reviewed decision for briefing."
+    ]
+    assert [item["id"] for item in briefing["briefing"]["active_blockers_risks"]] == [blocker_id]
+    assert briefing["briefing"]["open_questions"] == []
+    assert done_action_id not in {item["id"] for item in briefing["briefing"]["open_actions"]}
+    assert rejected_action_id not in {item["id"] for item in briefing["briefing"]["open_actions"]}
+    assert generated_decision_id not in {item["id"] for item in briefing["briefing"]["recent_decisions"]}
+
+
+def test_session_briefing_expands_related_context_from_carry_source(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    bootstrap_database(config)
+    service = SessionWorkflowService(
+        config,
+        audio_capture=FakeAudioCaptureService(),  # type: ignore[arg-type]
+        transcription_engine=FakeNoopService(),  # type: ignore[arg-type]
+        diarization_engine=FakeNoopService(),  # type: ignore[arg-type]
+        summarizer=FakeNoopService(),  # type: ignore[arg-type]
+        action_extractor=FakeNoopService(),  # type: ignore[arg-type]
+        export_service=ExportService(config),
+    )
+    carry_source = service.create_session("Launch Retrospective")
+    bridge = service.create_session("Weekly Sync")
+    current = service.create_planned_session(display_name="Weekly Sync")
+
+    with connection_context(config.database_path) as connection:
+        bridge_action_id = insert_action(
+            connection,
+            ActionRecord(
+                id=None,
+                meeting_id=int(bridge["id"]),
+                capture_id=str(bridge["capture_id"]),
+                description="Carry source bridge.",
+                status="carried_forward",
+                generated_at="2026-05-11T00:00:00+00:00",
+            ),
+        )
+        decision_id = insert_decision(
+            connection,
+            DecisionRecord(
+                id=None,
+                meeting_id=int(carry_source["id"]),
+                capture_id=str(carry_source["capture_id"]),
+                description="Decision from carried source should appear.",
+                generated_at="2026-05-10T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            "UPDATE actions SET carry_source_capture_id = ?, carry_count = 1 WHERE id = ?",
+            (carry_source["capture_id"], bridge_action_id),
+        )
+        connection.execute("UPDATE decisions SET review_status = 'accepted' WHERE id = ?", (decision_id,))
+        connection.commit()
+
+    briefing = service.session_briefing(str(current["capture_id"]))
+
+    assert carry_source["capture_id"] in briefing["related_session_ids"]
+    assert [item["id"] for item in briefing["briefing"]["recent_decisions"]] == [decision_id]
+
+
 def test_session_briefing_does_not_reuse_low_quality_summary(local_tmp_dir) -> None:
     config = _build_config(local_tmp_dir)
     bootstrap_database(config)
