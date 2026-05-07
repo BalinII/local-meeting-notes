@@ -54,15 +54,20 @@ fn session_search(query: String, limit: Option<i64>, scope: Option<String>) -> R
 }
 
 #[tauri::command]
-fn export_capture(capture_id: String, format: String) -> Result<String, String> {
-    let output = run_backend(&[
+fn export_capture(capture_id: String, format: String, mode: Option<String>) -> Result<String, String> {
+    let mut args = vec![
         "export",
         "run",
         "--capture-id",
         capture_id.as_str(),
         "--format",
         format.as_str(),
-    ])?;
+    ];
+    if let Some(mode_value) = mode.as_deref() {
+        args.push("--mode");
+        args.push(mode_value);
+    }
+    let output = run_backend(&args)?;
     Ok(output.trim().to_string())
 }
 
@@ -120,6 +125,10 @@ fn create_session_from_upcoming(title: String, planned_start_at: Option<String>,
 #[tauri::command]
 fn get_session(capture_id: String) -> Result<serde_json::Value, String> {
     run_backend_json(&["session", "get", "--capture-id", capture_id.as_str()])
+}
+#[tauri::command]
+fn get_session_briefing(capture_id: String) -> Result<serde_json::Value, String> {
+    run_backend_json(&["session", "briefing", "--capture-id", capture_id.as_str()])
 }
 
 #[tauri::command]
@@ -315,7 +324,7 @@ fn run_backend(args: &[&str]) -> Result<String, String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Err(if stderr.is_empty() { stdout } else { stderr });
+        return Err(clean_backend_error(if stderr.is_empty() { &stdout } else { &stderr }));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -323,6 +332,20 @@ fn run_backend(args: &[&str]) -> Result<String, String> {
 fn run_backend_json(args: &[&str]) -> Result<serde_json::Value, String> {
     let output = run_backend(args)?;
     serde_json::from_str(&output).map_err(|error| format!("Invalid backend JSON: {error}"))
+}
+
+fn clean_backend_error(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "The local backend did not return an error message.".to_string();
+    }
+    if trimmed.contains("Traceback (most recent call last)") {
+        if let Some(last_line) = trimmed.lines().rev().find(|line| !line.trim().is_empty()) {
+            return format!("Local backend error: {}", last_line.trim());
+        }
+        return "Local backend error. Check the backend logs for details.".to_string();
+    }
+    trimmed.to_string()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -337,6 +360,7 @@ pub fn run() {
             list_upcoming_sessions,
             create_session_from_upcoming,
             get_session,
+            get_session_briefing,
             rename_session,
             start_session,
             pause_session,

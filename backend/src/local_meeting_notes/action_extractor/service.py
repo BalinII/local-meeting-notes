@@ -6,6 +6,7 @@ import logging
 
 from ..config import AppConfig
 from ..models import ActionRecord, DecisionRecord, FollowUpRecord
+from ..quality_guardrails import assess_extracted_item
 from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
     delete_actions_for_capture,
@@ -72,6 +73,21 @@ class ActionExtractorService:
             delete_follow_ups_for_capture(connection, capture_id)
 
             actions, decisions, follow_ups = provider.extract([dict(row) for row in transcript_rows])
+            actions = [
+                item
+                for item in actions
+                if assess_extracted_item(item.description, item.evidence_snippet).is_acceptable
+            ]
+            decisions = [
+                item
+                for item in decisions
+                if assess_extracted_item(item.description, item.evidence_snippet).is_acceptable
+            ]
+            follow_ups = [
+                item
+                for item in follow_ups
+                if assess_extracted_item(item.description, item.evidence_snippet).is_acceptable
+            ]
 
             for item in actions:
                 insert_action(

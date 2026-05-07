@@ -118,9 +118,9 @@ Review/export:
 ```powershell
 python -m local_meeting_notes.app review recent --limit 12
 python -m local_meeting_notes.app review show --capture-id "<capture-id>" --format markdown
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html
-python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format markdown --mode final_notes
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format html --mode final_notes
+python -m local_meeting_notes.app export run --capture-id "<capture-id>" --format json --mode full_detail
 ```
 
 Workspace:

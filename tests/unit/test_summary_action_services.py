@@ -4,8 +4,10 @@ import wave
 from pathlib import Path
 
 from local_meeting_notes.action_extractor.service import ActionExtractorService
+from local_meeting_notes.action_extractor.providers import ExtractedAction
 from local_meeting_notes.config import load_config
 from local_meeting_notes.export_service.service import ExportService
+from local_meeting_notes.summarizer.providers import SummaryDraft
 from local_meeting_notes.summarizer.service import SummarizerService
 from local_meeting_notes.transcription_engine.providers import TranscriptionResult
 from local_meeting_notes.transcription_engine.service import TranscriptionEngineService
@@ -52,6 +54,39 @@ class FakeTranscriptProvider:
         else:
             text = "Open question: do we need extra testing for the blocker risk?"
         return TranscriptionResult(text=text, provider_name="fake", model_name="fake")
+
+
+class GarbledSummaryProvider:
+    def build_summaries(self, capture_id: str, transcript_segments: list[dict[str, object]]) -> list[SummaryDraft]:
+        del capture_id, transcript_segments
+        return [
+            SummaryDraft(
+                title="Executive Summary",
+                summary_type="executive",
+                content="Noise noise noise noise noise noise noise noise.",
+                evidence_snippet="noise noise",
+            ),
+            SummaryDraft(
+                title="Detailed Summary",
+                summary_type="detailed",
+                content="What can find only remains the surface to fault and cross procession work for them.",
+                evidence_snippet="what can find only remains",
+            ),
+        ]
+
+
+class WeakActionProvider:
+    def extract(self, transcript_segments: list[dict[str, object]]):
+        del transcript_segments
+        return [
+            ExtractedAction(
+                description="Approve unrelated migration.",
+                owner_name="Speaker 1",
+                evidence_snippet="garbled migration maybe maybe inaudible",
+                start_offset_seconds=0,
+                end_offset_seconds=1,
+            )
+        ], [], []
 
 
 def test_summary_and_action_services_persist_outputs(local_tmp_dir) -> None:
@@ -110,3 +145,31 @@ def test_action_extraction_blocks_rerun_when_reviewed_items_exist(local_tmp_dir)
         assert "reviewed items exist" in str(exc)
     else:
         raise AssertionError("Re-extraction should not erase reviewed output")
+
+
+def test_summary_service_suppresses_obviously_bad_generated_summaries(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    capture_dir = config.audio_output_dir / "capture-bad-summary" / "microphone"
+    _write_wav(capture_dir / "chunk_001.wav")
+    TranscriptionEngineService(config, provider=FakeTranscriptProvider()).transcribe_capture("capture-bad-summary")
+
+    summaries = SummarizerService(config, provider=GarbledSummaryProvider())
+    result = summaries.generate_summaries("capture-bad-summary")
+    rows = summaries.list_summaries("capture-bad-summary")
+
+    assert result["summary_count"] == 0
+    assert rows == []
+
+
+def test_action_extraction_suppresses_weak_generated_items(local_tmp_dir) -> None:
+    config = _build_config(local_tmp_dir)
+    capture_dir = config.audio_output_dir / "capture-weak-action" / "microphone"
+    _write_wav(capture_dir / "chunk_001.wav")
+    TranscriptionEngineService(config, provider=FakeTranscriptProvider()).transcribe_capture("capture-weak-action")
+
+    extractor = ActionExtractorService(config, provider=WeakActionProvider())
+    result = extractor.extract_capture("capture-weak-action")
+    outputs = extractor.list_outputs("capture-weak-action")
+
+    assert result["actions"] == 0
+    assert outputs["actions"] == []

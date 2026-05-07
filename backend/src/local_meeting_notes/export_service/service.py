@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import AppConfig
+from ..quality_guardrails import LOW_CONFIDENCE_SUMMARY_MESSAGE, assess_summary_text
 from ..storage.database import bootstrap_database, connection_context
 from ..storage.repository import (
     fetch_meeting_by_capture_id,
@@ -79,6 +80,9 @@ class ExportService:
                 "latest_generated_at": max(generated_values) if generated_values else None,
                 "summary_count": len(summaries),
                 "persisted_summary_count": len(raw_summaries),
+                "low_confidence_summary_count": sum(
+                    1 for summary in summaries if summary.get("quality_status") == "low_confidence"
+                ),
                 "action_count": len(actions),
                 "decision_count": len(decisions),
                 "follow_up_count": len(follow_ups),
@@ -202,17 +206,20 @@ def _content_state_for_meeting(meeting: Any) -> str:
 def render_markdown(payload: dict[str, Any]) -> str:
     export_mode = str(payload.get("metadata", {}).get("export_mode") or "final_notes")
     display_name = _display_name(payload)
-    lines = [
-        f"# {display_name}",
-        "",
-        "## Export Metadata",
-        "",
-        f"- Capture ID: `{payload['capture_id']}`",
-        f"- Export mode: {export_mode}",
-        f"- Content preference: {payload['metadata'].get('content_preference', 'reviewed_first')}",
-        f"- Exported: {payload['exported_at']}",
-        f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
-    ]
+    lines = [f"# {display_name}", ""]
+    if export_mode == "final_notes":
+        lines.extend([f"_Final Notes · Exported {payload['exported_at']}_", ""])
+        lines.extend([f"- Export mode: {export_mode}"])
+    else:
+        lines.extend([
+            "## Export Metadata",
+            "",
+            f"- Capture ID: `{payload['capture_id']}`",
+            f"- Export mode: {export_mode}",
+            f"- Content preference: {payload['metadata'].get('content_preference', 'reviewed_first')}",
+            f"- Exported: {payload['exported_at']}",
+            f"- Providers: {', '.join(payload['metadata']['providers']) or 'Unknown'}",
+        ])
     model_names = _provider_model_names(payload)
     if model_names:
         lines.append(f"- Models: {', '.join(model_names)}")
@@ -296,9 +303,13 @@ def _markdown_summaries(payload: dict[str, Any]) -> list[str]:
                 "",
                 str(summary["content"]),
                 "",
-                f"_ {_metadata_line(summary)}",
             ]
         )
+        if summary.get("quality_status") == "low_confidence":
+            reasons = ", ".join(str(reason) for reason in summary.get("quality_reasons") or [])
+            lines.append(f"_Low confidence: review the transcript first{f' ({reasons})' if reasons else ''}._")
+            lines.append("")
+        lines.append(f"_ {_metadata_line(summary)}")
         if summary.get("evidence_snippet"):
             lines.append("")
             lines.append("<details><summary>Evidence snippets</summary>")
@@ -317,8 +328,12 @@ def _consolidate_summaries(summaries: list[dict[str, Any]]) -> list[dict[str, An
     consolidated = []
     if executive:
         consolidated.append(_consolidate_summary_group(executive, "Executive Summary", "executive"))
+    else:
+        consolidated.append(_low_confidence_summary("Executive Summary", "executive"))
     if detailed:
         consolidated.append(_consolidate_summary_group(detailed, "Detailed Summary", "detailed"))
+    else:
+        consolidated.append(_low_confidence_summary("Detailed Summary", "detailed"))
     return consolidated
 
 
@@ -337,10 +352,10 @@ def _consolidate_summary_group(
         summary = dict(summaries[0])
         summary["title"] = title
         summary["summary_type"] = summary_type
-        return summary
+        return _with_summary_quality(summary)
 
     first = summaries[0]
-    return {
+    return _with_summary_quality({
         "id": first.get("id"),
         "meeting_id": first.get("meeting_id"),
         "capture_id": first.get("capture_id"),
@@ -351,6 +366,36 @@ def _consolidate_summary_group(
         "provider_name": _combined_value(summaries, "provider_name"),
         "model_name": _combined_value(summaries, "model_name"),
         "generated_at": _latest_value(summaries, "generated_at"),
+    })
+
+
+def _with_summary_quality(summary: dict[str, Any]) -> dict[str, Any]:
+    assessment = assess_summary_text(summary.get("content"), summary.get("evidence_snippet"))
+    if assessment.is_acceptable:
+        summary["quality_status"] = "ok"
+        summary["quality_reasons"] = []
+        return summary
+    summary["content"] = LOW_CONFIDENCE_SUMMARY_MESSAGE
+    summary["evidence_snippet"] = summary.get("evidence_snippet")
+    summary["quality_status"] = "low_confidence"
+    summary["quality_reasons"] = list(assessment.reasons)
+    return summary
+
+
+def _low_confidence_summary(title: str, summary_type: str) -> dict[str, Any]:
+    return {
+        "id": None,
+        "meeting_id": None,
+        "capture_id": None,
+        "title": title,
+        "summary_type": summary_type,
+        "content": LOW_CONFIDENCE_SUMMARY_MESSAGE,
+        "evidence_snippet": None,
+        "provider_name": "quality_guardrail",
+        "model_name": None,
+        "generated_at": None,
+        "quality_status": "low_confidence",
+        "quality_reasons": ["no acceptable summary was generated"],
     }
 
 
@@ -503,10 +548,18 @@ def _html_summaries(payload: dict[str, Any]) -> str:
         summary_title = str(summary["title"])
         section_id = _slugify(summary_title)
         evidence = _html_evidence(summary)
+        quality = ""
+        if summary.get("quality_status") == "low_confidence":
+            reasons = ", ".join(str(reason) for reason in summary.get("quality_reasons") or [])
+            reason_text = f" ({reasons})" if reasons else ""
+            quality = (
+                "<p class=\"uncertain\"><strong>Low confidence:</strong> "
+                f"Review the transcript first{html.escape(reason_text)}.</p>"
+            )
         articles.append(
             f"<section id=\"{html.escape(section_id)}\"><h2>{html.escape(summary_title)}</h2>"
             f"<article><p class=\"summary-content\">{html.escape(str(summary['content']))}</p>"
-            f"<p class=\"badge\">{html.escape(_metadata_line(summary))}</p>{evidence}</article></section>"
+            f"{quality}<p class=\"badge\">{html.escape(_metadata_line(summary))}</p>{evidence}</article></section>"
         )
     return "".join(articles)
 
